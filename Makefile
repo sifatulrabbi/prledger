@@ -12,7 +12,7 @@ GH      ?= gh
 DIST    := dist
 TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
 # owner/name from the origin remote; works with SSH host aliases.
-REPO     = $(shell git remote get-url origin | sed -E 's#\.git$$##; s#.*[:/]([^/]+/[^/]+)$$#\1#')
+REPO     = $(shell git remote get-url origin | sed -E 's|\.git$$||; s|.*[:/]([^/]+/[^/]+)$$|\1|')
 
 # Release steps must run in order.
 .NOTPARALLEL:
