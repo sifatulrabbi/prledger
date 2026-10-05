@@ -23,10 +23,15 @@ type fakeGh struct {
 	err    error
 	argv   []string
 	env    []string
+	// respond, when set, answers instead of stdout/err, e.g. per subcommand.
+	respond func(argv []string) ([]byte, error)
 }
 
 func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
 	f.argv, f.env = argv, env
+	if f.respond != nil {
+		return f.respond(argv)
+	}
 	return f.stdout, f.err
 }
 

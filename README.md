@@ -31,6 +31,7 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 | `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger export html` | Writes the same page as one standalone file you can open or share, with the data baked in. Default file: `prledger-<owner>-<repo>.html` in the current folder; `-o file` picks another. `--cached` uses the last fetched data. |
 | `prledger groups suggest` | Prints a `groups:` block built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. Paste it into your config and rename the groups. `--cached` uses the last fetched data. |
+| `prledger doctor` | Checks, one line each, that the config loads, the repo is detected, `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
 | `prledger config path` | Prints the config file prledger reads, and says if it does not exist yet. |
 | `prledger config init` | Writes a commented starter config. Never overwrites an existing file. |
 | `prledger version` | Prints the version. |
