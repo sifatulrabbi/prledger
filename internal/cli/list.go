@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -52,10 +53,19 @@ func writeTable(w io.Writer, snap core.Snapshot) error {
 	}
 	fmt.Fprintf(w, "%s · %d pull requests by %s · fetched %s\n", snap.Repo, total, snap.Author, snap.FetchedAt.Format("2006-01-02 15:04 MST"))
 	for _, g := range snap.Groups {
-		fmt.Fprintf(w, "\n%s (%d)\n", g.Name, len(g.PRs))
+		kind := ""
+		if g.Stack != nil {
+			kind = " · stack"
+		}
+		fmt.Fprintf(w, "\n%s (%d)%s\n", g.Name, len(g.PRs), kind)
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		for _, pr := range g.PRs {
-			fmt.Fprintf(tw, "  #%d\t%s\t%s\t%s\n", pr.Number, pr.Status, truncate(pr.Title, maxTitle), pr.Branch)
+		for i, pr := range g.PRs {
+			title := truncate(pr.Title, maxTitle)
+			if g.Stack != nil && g.Stack.Entries[i].Depth > 0 {
+				// Indent stacked PRs under the PR they sit on.
+				title = strings.Repeat("  ", g.Stack.Entries[i].Depth-1) + "└ " + title
+			}
+			fmt.Fprintf(tw, "  #%d\t%s\t%s\t%s\n", pr.Number, pr.Status, title, pr.Branch)
 		}
 		if err := tw.Flush(); err != nil {
 			return err

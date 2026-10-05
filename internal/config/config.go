@@ -33,9 +33,8 @@ type RepoConfig struct {
 	Author     string            `yaml:"author"`
 	Limit      int               `yaml:"limit"`
 	AutoGroups *bool             `yaml:"auto_groups"`
-	// WorktreeGroups groups PRs by the local git worktree that checked out
-	// their branch.
-	WorktreeGroups *bool `yaml:"worktree_groups"`
+	// RemovedWorktreeGroups is only here to explain the removed key.
+	RemovedWorktreeGroups *bool `yaml:"worktree_groups"`
 	// TicketPrefixes limits automatic grouping to these ticket key prefixes.
 	TicketPrefixes []string      `yaml:"ticket_prefixes"`
 	Groups         []GroupConfig `yaml:"groups"`
@@ -57,7 +56,6 @@ type Settings struct {
 	Author         string
 	Limit          int
 	AutoGroups     bool
-	WorktreeGroups bool
 	TicketPrefixes []string
 	Groups         []core.GroupRule
 }
@@ -120,6 +118,9 @@ func (f File) validate() error {
 	if err := checkPrefixes("defaults", f.Defaults.TicketPrefixes); err != nil {
 		return err
 	}
+	if err := checkRemoved("defaults", f.Defaults); err != nil {
+		return err
+	}
 	seen := map[string]string{}
 	for key, rc := range f.Repos {
 		lower := strings.ToLower(key)
@@ -130,9 +131,19 @@ func (f File) validate() error {
 		if err := checkPrefixes(key, rc.TicketPrefixes); err != nil {
 			return err
 		}
+		if err := checkRemoved(key, rc); err != nil {
+			return err
+		}
 		if _, err := compileGroups(rc.Groups); err != nil {
 			return fmt.Errorf("%s: %w", key, err)
 		}
+	}
+	return nil
+}
+
+func checkRemoved(section string, rc RepoConfig) error {
+	if rc.RemovedWorktreeGroups != nil {
+		return fmt.Errorf("%s: worktree_groups was removed (stacked PRs are grouped instead); delete the line", section)
 	}
 	return nil
 }
@@ -149,7 +160,7 @@ func checkPrefixes(section string, prefixes []string) error {
 // For resolves the settings for repo. getenv expands $VARS and ~ in
 // gh_command and gh_env values.
 func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) {
-	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true, WorktreeGroups: true}
+	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
 	sections := []RepoConfig{f.Defaults}
 	if rc, ok := f.repo(repo); ok {
 		sections = append(sections, rc)
@@ -172,9 +183,6 @@ func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) 
 		}
 		if rc.AutoGroups != nil {
 			s.AutoGroups = *rc.AutoGroups
-		}
-		if rc.WorktreeGroups != nil {
-			s.WorktreeGroups = *rc.WorktreeGroups
 		}
 		if rc.TicketPrefixes != nil {
 			s.TicketPrefixes = rc.TicketPrefixes

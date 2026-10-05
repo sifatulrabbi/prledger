@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +17,10 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-// fakeGh stands in for the gh process: it answers every run with stdout/err
-// and records the argv and env it was given.
+// fakeGh stands in for the gh process. Without respond it answers
+// `gh repo view` with "main" and every other run with stdout/err; respond,
+// when set, answers every call, repo view included. It records the argv and
+// env of the last call other than repo view (the pr list call tests inspect).
 type fakeGh struct {
 	stdout []byte
 	err    error
@@ -28,9 +31,15 @@ type fakeGh struct {
 }
 
 func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
-	f.argv, f.env = argv, env
+	repoView := slices.Contains(argv, "repo") && slices.Contains(argv, "view")
+	if !repoView {
+		f.argv, f.env = argv, env // the pr list call the tests inspect
+	}
 	if f.respond != nil {
 		return f.respond(argv)
+	}
+	if repoView && f.err == nil {
+		return []byte("main\n"), nil // gh repo view … --jq .defaultBranchRef.name
 	}
 	return f.stdout, f.err
 }
@@ -41,9 +50,6 @@ type harness struct {
 	stderr bytes.Buffer
 	env    map[string]string
 	deps   Deps
-	// worktrees is what the local checkout reports; nil by default.
-	worktrees   []core.Worktree
-	worktreeErr error
 }
 
 // writeConfig writes body to the harness's config file.
@@ -67,7 +73,6 @@ func newHarness(t *testing.T) *harness {
 		"XDG_CACHE_HOME":  t.TempDir(),
 	}
 	h.deps = Deps{
-		Worktrees:  func(context.Context) ([]core.Worktree, error) { return h.worktrees, h.worktreeErr },
 		Getenv:     func(k string) string { return h.env[k] },
 		Stdout:     &h.stdout,
 		Stderr:     &h.stderr,

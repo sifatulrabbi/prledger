@@ -13,7 +13,6 @@ import (
 	"github.com/sifatulrabbi/prledger/internal/cli"
 	"github.com/sifatulrabbi/prledger/internal/gh"
 	"github.com/sifatulrabbi/prledger/internal/gitremote"
-	"github.com/sifatulrabbi/prledger/internal/gitworktree"
 )
 
 // version is set at release time with -ldflags "-X main.version=vX.Y.Z".
@@ -33,7 +32,6 @@ func main() {
 		Getenv:      os.Getenv,
 		OpenBrowser: browser.Open,
 		DetectRepo:  inWorkingDir(gitremote.Origin),
-		Worktrees:   inWorkingDir(gitworktree.List),
 	})
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "prledger:", err)

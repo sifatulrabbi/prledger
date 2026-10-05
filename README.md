@@ -33,7 +33,7 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 | `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger export html` | Writes the same page as one standalone file you can open or share, with the data baked in. Default file: `prledger-<owner>-<repo>.html` in the current folder; `-o file` picks another. `--cached` uses the last fetched data. |
 | `prledger groups suggest` | Prints groups built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. With no groups configured yet it prints a `groups:` block to paste under the repo; otherwise it prints list items to append under your existing `groups:`. Rename them as you like. `--cached` uses the last fetched data. |
-| `prledger doctor` | Checks, one line each, that the repo is detected, the config loads, how many git worktrees it found, that `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
+| `prledger doctor` | Checks, one line each, that the repo is detected, the config loads, `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
 | `prledger config path` | Prints the config file prledger reads, and says if it does not exist yet. |
 | `prledger config init` | Writes a commented starter config. Never overwrites an existing file. |
 | `prledger version` | Prints the version. |
@@ -80,7 +80,6 @@ Settings in a `repos` section override `defaults`. Repo keys are `owner/name` an
 | `author` | Whose pull requests to show. Default `@me`. |
 | `limit` | Most pull requests to fetch. Default 1000. |
 | `auto_groups` | Group pull requests automatically (see below). Default `true`. |
-| `worktree_groups` | Group pull requests by the local git worktree that checked out their branch (see below). Default `true`. |
 | `ticket_prefixes` | Your issue tracker's key prefixes, e.g. `[ABC, OPS]`. When set, only these count as ticket keys, in any case and with any number of digits. |
 | `groups` | Your own groups, in a repo section only. Each has a `name` and at least one of `prs`, `branch`, `title`. |
 
@@ -111,9 +110,9 @@ Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), o
 
 Each pull request lands in exactly one group, decided in this order:
 
-1. A group in your config that lists the PR's number.
-2. The first group in your config whose `branch` or `title` pattern matches.
-3. The local git worktree that checked out the PR's branch, if `worktree_groups` is on. The group is named after the worktree's folder and shows its path. prledger reads each worktree's history (its HEAD reflog), so a worktree that has worked through many branches collects all of their PRs. With automatic grouping on, PRs that share a ticket key or branch family with a worktree's PRs join it too, which catches stacked branches that were never checked out there. The main checkout is not counted, and worktrees are only used when you run prledger inside a checkout of that repo.
+1. **Stacks.** A PR is stacked when its base branch is the head branch of another of your PRs. Every PR linked that way, open, merged or closed, forms one stack, named after its bottom PR. Its cards are in stack order, bottom first, and each says where it sits ("2/8 · on #6730"). PRs whose base is a shared branch other than the default branch, for example `integration/phoenix`, form one stack per branch, named "on integration/phoenix", once at least two PRs sit on it.
+2. A group in your config that lists the PR's number.
+3. The first group in your config whose `branch` or `title` pattern matches.
 4. Automatic grouping, if `auto_groups` is on. PRs are linked when they share a ticket key or a branch:
    - A ticket key such as `ABC-123` at the start of a branch path segment (`alice/abc-123-search`, `feature/ABC-123/ui`), or in upper case in the title (`fix: crash (ABC-123)`). Keys need at least two digits, and common words such as `SHA-256`, `UTF-16` or `fix-500` are skipped. If your tracker's prefixes are known, set `ticket_prefixes` and prledger stops guessing.
    - The same branch, or a split of it: `topic-split/part-1` joins `topic`.
@@ -121,6 +120,8 @@ Each pull request lands in exactly one group, decided in this order:
 5. Everything else goes to **Ungrouped**, including automatic groups of a single PR.
 
 Groups are listed with the most recent work first; Ungrouped comes last.
+
+A stack can only be seen while GitHub keeps the links: when a parent merges and GitHub retargets its child to the default branch, that child counts as a separate PR from then on.
 
 ## Releasing
 

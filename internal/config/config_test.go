@@ -48,7 +48,7 @@ func TestMissingFileGivesBuiltInDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true, WorktreeGroups: true}
+	want := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("settings = %+v, want %+v", s, want)
 	}
@@ -73,12 +73,11 @@ repos:
     limit: 50
 `)
 	want := Settings{
-		Command:        []string{"env", "GH_CONFIG_DIR=/cfg/gh-personal", "gh"},
-		Env:            map[string]string{"GH_HOST": "github.com", "PAGER": "less"},
-		Author:         "alice",
-		Limit:          50,
-		AutoGroups:     true,
-		WorktreeGroups: true,
+		Command:    []string{"env", "GH_CONFIG_DIR=/cfg/gh-personal", "gh"},
+		Env:        map[string]string{"GH_HOST": "github.com", "PAGER": "less"},
+		Author:     "alice",
+		Limit:      50,
+		AutoGroups: true,
 	}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("settings = %+v, want %+v", s, want)
@@ -232,6 +231,16 @@ func TestRepoKeysDifferingOnlyInCaseAreRejected(t *testing.T) {
 	_, err := Load(write(t, "repos:\n  octo/hello-world: {author: a}\n  Octo/Hello-World: {author: b}\n"))
 	if err == nil || !strings.Contains(err.Error(), "more than once") {
 		t.Fatalf("err = %v, want a duplicate repo error", err)
+	}
+}
+
+// worktree_groups was removed when stacks replaced worktree grouping; a
+// config that still has it gets told what to do instead of a generic
+// "field not found".
+func TestTheRemovedWorktreeGroupsKeyExplainsItself(t *testing.T) {
+	err := configErr(t, "repos:\n  octo/hello-world:\n    worktree_groups: false\n")
+	if err == nil || !strings.Contains(err.Error(), "worktree_groups was removed") || !strings.Contains(err.Error(), "octo/hello-world") {
+		t.Fatalf("err = %v, want a removal note naming the section", err)
 	}
 }
 

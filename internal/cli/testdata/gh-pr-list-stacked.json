@@ -1,0 +1,8 @@
+[
+  {"number":35,"title":"feat: onboarding checklist","headRefName":"alice/checklist","baseRefName":"integration/v2","state":"OPEN","isDraft":false,"url":"https://github.com/octo/hello-world/pull/35","createdAt":"2026-09-26T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":34,"title":"feat(ui): results page","headRefName":"alice/results","baseRefName":"alice/search-api","state":"OPEN","isDraft":true,"url":"https://github.com/octo/hello-world/pull/34","createdAt":"2026-09-24T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":33,"title":"feat(api): search endpoint","headRefName":"alice/search-api","baseRefName":"alice/search-index","state":"OPEN","isDraft":false,"url":"https://github.com/octo/hello-world/pull/33","createdAt":"2026-09-23T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":32,"title":"feat(db): search index","headRefName":"alice/search-index","baseRefName":"main","state":"MERGED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/32","createdAt":"2026-09-22T10:00:00Z","mergedAt":"2026-09-25T09:00:00Z","closedAt":"2026-09-25T09:00:00Z"},
+  {"number":31,"title":"feat: onboarding tour","headRefName":"alice/tour","baseRefName":"integration/v2","state":"OPEN","isDraft":false,"url":"https://github.com/octo/hello-world/pull/31","createdAt":"2026-09-21T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":30,"title":"docs: readme tweaks","headRefName":"alice/readme","baseRefName":"main","state":"MERGED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/30","createdAt":"2026-09-20T10:00:00Z","mergedAt":"2026-09-20T12:00:00Z","closedAt":"2026-09-20T12:00:00Z"}
+]

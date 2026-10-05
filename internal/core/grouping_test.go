@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
 )
@@ -221,7 +220,7 @@ func TestSuggestSkipsClaimedPRs(t *testing.T) {
 		pr(2, "a/abc-11-y", "two"),
 		pr(3, "a/abc-11-z", "three"),
 		pr(4, "lonely", "four"),
-	})
+	}, "main")
 	if len(groups) != 1 || groups[0].Name != "ABC-11 · two" || len(groups[0].PRs) != 2 {
 		t.Fatalf("groups = %+v, want ABC-11 with #2 and #3 only", groups)
 	}
@@ -248,19 +247,20 @@ func TestEveryPRLandsInExactlyOneGroup(t *testing.T) {
 			if r.IntN(4) == 0 && len(prs) > 0 {
 				branch = prs[r.IntN(len(prs))].Branch + "-split/" + pick()
 			}
-			prs = append(prs, core.PR{Number: n, Branch: branch, Title: pick() + " " + pick(), CreatedAt: day(1 + r.IntN(28))})
+			p := core.PR{Number: n, Branch: branch, Title: pick() + " " + pick(), CreatedAt: day(1 + r.IntN(28))}
+			switch r.IntN(4) { // some stacked, some on a shared branch, some on main
+			case 0:
+				if len(prs) > 0 {
+					p.Base = prs[r.IntN(len(prs))].Branch
+				}
+			case 1:
+				p.Base = "integration/x"
+			default:
+				p.Base = "main"
+			}
+			prs = append(prs, p)
 		}
 		g := core.Grouping{Auto: r.IntN(2) == 0}
-		for i := range r.IntN(3) {
-			w := core.Worktree{Name: "wt" + strconv.Itoa(i), Branches: map[string]time.Time{}}
-			for range r.IntN(5) {
-				w.Branches[prs[r.IntN(len(prs))].Branch] = day(1 + r.IntN(28))
-			}
-			if r.IntN(2) == 0 {
-				w.Current = prs[r.IntN(len(prs))].Branch
-			}
-			g.Worktrees = append(g.Worktrees, w)
-		}
 		for i := range r.IntN(4) {
 			rule := core.GroupRule{Name: "rule" + strconv.Itoa(i), PRs: []int{1 + r.IntN(40)}}
 			if r.IntN(2) == 0 {

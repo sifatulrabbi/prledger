@@ -10,14 +10,41 @@ import (
 )
 
 type fakeSource struct {
-	prs   []core.PR
-	err   error
-	query core.Query
+	prs           []core.PR
+	err           error
+	query         core.Query
+	defaultBranch string // "main" when empty
+	branchErr     error
 }
 
 func (f *fakeSource) ListPRs(_ context.Context, q core.Query) ([]core.PR, error) {
 	f.query = q
 	return f.prs, f.err
+}
+
+func (f *fakeSource) DefaultBranch(context.Context, core.Repo) (string, error) {
+	if f.defaultBranch == "" {
+		return "main", f.branchErr
+	}
+	return f.defaultBranch, f.branchErr
+}
+
+func TestSnapshotRecordsTheDefaultBranch(t *testing.T) {
+	snap, err := core.Ledger{Source: &fakeSource{defaultBranch: "trunk"}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || snap.DefaultBranch != "trunk" {
+		t.Fatalf("DefaultBranch = %q, err %v", snap.DefaultBranch, err)
+	}
+}
+
+// Not knowing the default branch only costs shared-base stacks; the PRs
+// still list and PR-on-PR stacks still form.
+func TestAnUnknownDefaultBranchStillGivesASnapshot(t *testing.T) {
+	a := core.PR{Number: 1, Branch: "a", Base: "main", CreatedAt: day(1)}
+	b := core.PR{Number: 2, Branch: "b", Base: "a", CreatedAt: day(2)}
+	snap, err := core.Ledger{Source: &fakeSource{prs: []core.PR{a, b}, branchErr: errors.New("gh: repo view failed")}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || snap.DefaultBranch != "" || len(snap.Groups) != 1 || snap.Groups[0].Stack == nil {
+		t.Fatalf("snap = %+v, err %v; want the stack without a default branch", snap, err)
+	}
 }
 
 var (
@@ -40,7 +67,7 @@ func TestSnapshotHoldsEveryPRNewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Schema != 1 || snap.Repo != "octo/hello-world" || snap.Author != "@me" || !snap.FetchedAt.Equal(now) {
+	if snap.Schema != core.SchemaVersion || snap.Repo != "octo/hello-world" || snap.Author != "@me" || !snap.FetchedAt.Equal(now) {
 		t.Fatalf("header = %+v", snap)
 	}
 	if len(snap.Groups) != 1 || snap.Groups[0].Name != "Ungrouped" {
