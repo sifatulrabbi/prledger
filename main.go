@@ -11,9 +11,9 @@ import (
 
 	"github.com/sifatulrabbi/prledger/internal/browser"
 	"github.com/sifatulrabbi/prledger/internal/cli"
-	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/gh"
 	"github.com/sifatulrabbi/prledger/internal/gitremote"
+	"github.com/sifatulrabbi/prledger/internal/gitworktree"
 )
 
 // version is set at release time with -ldflags "-X main.version=vX.Y.Z".
@@ -32,16 +32,23 @@ func main() {
 		Runner:      gh.ExecRunner{},
 		Getenv:      os.Getenv,
 		OpenBrowser: browser.Open,
-		DetectRepo: func(ctx context.Context) (core.Repo, error) {
-			dir, err := os.Getwd()
-			if err != nil {
-				return core.Repo{}, err
-			}
-			return gitremote.Origin(ctx, dir)
-		},
+		DetectRepo:  inWorkingDir(gitremote.Origin),
+		Worktrees:   inWorkingDir(gitworktree.List),
 	})
 	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "prledger:", err)
 		os.Exit(1)
+	}
+}
+
+// inWorkingDir runs a git reader against the current directory.
+func inWorkingDir[T any](read func(context.Context, string) (T, error)) func(context.Context) (T, error) {
+	return func(ctx context.Context) (T, error) {
+		dir, err := os.Getwd()
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		return read(ctx, dir)
 	}
 }

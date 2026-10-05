@@ -33,6 +33,9 @@ type RepoConfig struct {
 	Author     string            `yaml:"author"`
 	Limit      int               `yaml:"limit"`
 	AutoGroups *bool             `yaml:"auto_groups"`
+	// WorktreeGroups groups PRs by the local git worktree that checked out
+	// their branch.
+	WorktreeGroups *bool `yaml:"worktree_groups"`
 	// TicketPrefixes limits automatic grouping to these ticket key prefixes.
 	TicketPrefixes []string      `yaml:"ticket_prefixes"`
 	Groups         []GroupConfig `yaml:"groups"`
@@ -54,6 +57,7 @@ type Settings struct {
 	Author         string
 	Limit          int
 	AutoGroups     bool
+	WorktreeGroups bool
 	TicketPrefixes []string
 	Groups         []core.GroupRule
 }
@@ -145,7 +149,7 @@ func checkPrefixes(section string, prefixes []string) error {
 // For resolves the settings for repo. getenv expands $VARS and ~ in
 // gh_command and gh_env values.
 func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) {
-	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
+	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true, WorktreeGroups: true}
 	sections := []RepoConfig{f.Defaults}
 	if rc, ok := f.repo(repo); ok {
 		sections = append(sections, rc)
@@ -168,6 +172,9 @@ func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) 
 		}
 		if rc.AutoGroups != nil {
 			s.AutoGroups = *rc.AutoGroups
+		}
+		if rc.WorktreeGroups != nil {
+			s.WorktreeGroups = *rc.WorktreeGroups
 		}
 		if rc.TicketPrefixes != nil {
 			s.TicketPrefixes = rc.TicketPrefixes

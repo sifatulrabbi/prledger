@@ -48,7 +48,7 @@ func TestMissingFileGivesBuiltInDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
+	want := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true, WorktreeGroups: true}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("settings = %+v, want %+v", s, want)
 	}
@@ -73,11 +73,12 @@ repos:
     limit: 50
 `)
 	want := Settings{
-		Command:    []string{"env", "GH_CONFIG_DIR=/cfg/gh-personal", "gh"},
-		Env:        map[string]string{"GH_HOST": "github.com", "PAGER": "less"},
-		Author:     "alice",
-		Limit:      50,
-		AutoGroups: true,
+		Command:        []string{"env", "GH_CONFIG_DIR=/cfg/gh-personal", "gh"},
+		Env:            map[string]string{"GH_HOST": "github.com", "PAGER": "less"},
+		Author:         "alice",
+		Limit:          50,
+		AutoGroups:     true,
+		WorktreeGroups: true,
 	}
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("settings = %+v, want %+v", s, want)
