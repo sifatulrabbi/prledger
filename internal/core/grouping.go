@@ -72,16 +72,17 @@ func (g Grouping) split(prs []PR) (claimed []Group, rest []PR) {
 
 func (g Grouping) arrange(prs []PR, defaultBranch string) []Group {
 	keys := newKeyFinder(g.TicketPrefixes)
-	groups, loose := stacks(prs, defaultBranch)
+	stacked, loose := stacks(prs, defaultBranch)
 	claimed, ungrouped := g.split(loose)
-	groups = append(groups, claimed...)
+	// Config groups come first so their names, chosen by the user, are kept;
+	// stacks and automatic groups give way. "Ungrouped" is reserved for the
+	// real Ungrouped group.
+	groups := append(claimed, stacked...)
 	if g.Auto {
 		var auto []Group
 		auto, ungrouped = autoGroups(ungrouped, keys)
 		groups = append(groups, auto...)
 	}
-	// Names are made unique in precedence order, so config rules keep theirs;
-	// "Ungrouped" is reserved for the real Ungrouped group.
 	taken := map[string]bool{UngroupedName: true}
 	for i := range groups {
 		groups[i].Name = UniqueName(groups[i].Name, taken)

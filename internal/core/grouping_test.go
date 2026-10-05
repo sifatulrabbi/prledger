@@ -247,7 +247,18 @@ func TestEveryPRLandsInExactlyOneGroup(t *testing.T) {
 			if r.IntN(4) == 0 && len(prs) > 0 {
 				branch = prs[r.IntN(len(prs))].Branch + "-split/" + pick()
 			}
-			prs = append(prs, core.PR{Number: n, Branch: branch, Title: pick() + " " + pick(), CreatedAt: day(1 + r.IntN(28))})
+			p := core.PR{Number: n, Branch: branch, Title: pick() + " " + pick(), CreatedAt: day(1 + r.IntN(28))}
+			switch r.IntN(4) { // some stacked, some on a shared branch, some on main
+			case 0:
+				if len(prs) > 0 {
+					p.Base = prs[r.IntN(len(prs))].Branch
+				}
+			case 1:
+				p.Base = "integration/x"
+			default:
+				p.Base = "main"
+			}
+			prs = append(prs, p)
 		}
 		g := core.Grouping{Auto: r.IntN(2) == 0}
 		for i := range r.IntN(4) {

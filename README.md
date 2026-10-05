@@ -110,7 +110,7 @@ Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), o
 
 Each pull request lands in exactly one group, decided in this order:
 
-1. **Stacks.** A PR is stacked when its base branch is the head branch of another of your PRs. Every PR linked that way, open, merged or closed, forms one stack, named after its bottom PR. Its cards are in stack order, bottom first, and each says where it sits ("2/8 · on #6730"). PRs whose base is a shared branch other than the default branch, for example `integration/phoenix`, form one stack per branch, named "on integration/phoenix".
+1. **Stacks.** A PR is stacked when its base branch is the head branch of another of your PRs. Every PR linked that way, open, merged or closed, forms one stack, named after its bottom PR. Its cards are in stack order, bottom first, and each says where it sits ("2/8 · on #6730"). PRs whose base is a shared branch other than the default branch, for example `integration/phoenix`, form one stack per branch, named "on integration/phoenix", once at least two PRs sit on it.
 2. A group in your config that lists the PR's number.
 3. The first group in your config whose `branch` or `title` pattern matches.
 4. Automatic grouping, if `auto_groups` is on. PRs are linked when they share a ticket key or a branch:

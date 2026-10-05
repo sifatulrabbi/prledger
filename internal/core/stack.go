@@ -29,22 +29,25 @@ func stacks(prs []PR, defaultBranch string) (groups []Group, rest []PR) {
 	slices.SortFunc(ord, olderFirst)
 	n := len(ord)
 
-	// Empty names never link: snapshots from before stacks have no base.
+	// Empty names never link: snapshots from before stacks have no base. The
+	// default branch never links either: a PR whose head is it (a release PR
+	// such as develop → main) is not what PRs based on it sit on.
+	links := func(branch string) bool { return branch != "" && branch != defaultBranch }
 	heads := map[string][]int{} // head branch -> PRs with it, oldest first
 	for i, p := range ord {
-		if p.Branch != "" {
+		if links(p.Branch) {
 			heads[p.Branch] = append(heads[p.Branch], i)
 		}
 	}
 	parent := make([]int, n)
 	for i, p := range ord {
 		parent[i] = -1
-		if p.Base != "" {
+		if links(p.Base) {
 			parent[i] = parentOf(i, heads[p.Base])
 		}
 	}
 	shared := func(i int) string {
-		if parent[i] >= 0 || defaultBranch == "" || ord[i].Base == "" || ord[i].Base == defaultBranch {
+		if parent[i] >= 0 || defaultBranch == "" || !links(ord[i].Base) {
 			return ""
 		}
 		return ord[i].Base
@@ -62,12 +65,6 @@ func stacks(prs []PR, defaultBranch string) (groups []Group, rest []PR) {
 			} else {
 				firstOnBase[b] = i
 			}
-		}
-	}
-	// A reused head branch is the same work, but only counts inside a stack.
-	for _, same := range heads {
-		for _, i := range same[1:] {
-			uf.union(i, same[0])
 		}
 	}
 
@@ -91,7 +88,9 @@ func stacks(prs []PR, defaultBranch string) (groups []Group, rest []PR) {
 				base = b
 			}
 		}
-		if !linked && base == "" {
+		// A shared base needs at least two PRs: one PR on its own branch is
+		// not a stack.
+		if !linked && (base == "" || len(members) < 2) {
 			for _, i := range members {
 				rest = append(rest, ord[i])
 			}
@@ -123,13 +122,10 @@ func parentOf(i int, candidates []int) int {
 // PRs stacked on it, oldest first. A loop of bases has no bottom; its oldest
 // member is treated as one, so every member is placed exactly once.
 func walkStack(ord []PR, members, parent []int, base string) Group {
-	in := map[int]bool{}
-	for _, i := range members {
-		in[i] = true
-	}
+	// A parent is always in its child's set: they were joined.
 	children := map[int][]int{}
 	for _, i := range members { // members are oldest first, so children are too
-		if p := parent[i]; p >= 0 && in[p] {
+		if p := parent[i]; p >= 0 {
 			children[p] = append(children[p], i)
 		}
 	}
@@ -148,7 +144,7 @@ func walkStack(ord []PR, members, parent []int, base string) Group {
 		}
 	}
 	for _, i := range members {
-		if p := parent[i]; p < 0 || !in[p] {
+		if parent[i] < 0 {
 			walk(i, 0, 0)
 		}
 	}

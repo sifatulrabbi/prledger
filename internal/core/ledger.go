@@ -9,7 +9,7 @@ import (
 
 // SchemaVersion is the version of the Snapshot JSON contract. Bump it on any
 // change that is not purely additive.
-const SchemaVersion = 1
+const SchemaVersion = 2 // 2: groups lost "worktree"; PRs gained "base", groups "stack"
 
 // Snapshot is everything a frontend needs to show one repo's PRs. It is the
 // JSON contract shared by `list --json`, the HTTP API and the HTML export.
@@ -45,9 +45,11 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	// Without the default branch only shared-base stacks are lost, so a
+	// failure here does not fail the snapshot.
 	base, err := l.Source.DefaultBranch(ctx, q.Repo)
 	if err != nil {
-		return Snapshot{}, err
+		base = ""
 	}
 	return Snapshot{
 		Schema:        SchemaVersion,

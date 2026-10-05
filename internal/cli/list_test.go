@@ -17,9 +17,10 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-// fakeGh stands in for the gh process: it answers `gh repo view` with "main"
-// and every other run with stdout/err, and records the argv and env of the
-// last call other than repo view.
+// fakeGh stands in for the gh process. Without respond it answers
+// `gh repo view` with "main" and every other run with stdout/err; respond,
+// when set, answers every call, repo view included. It records the argv and
+// env of the last call other than repo view (the pr list call tests inspect).
 type fakeGh struct {
 	stdout []byte
 	err    error

@@ -36,11 +36,14 @@ func TestSnapshotRecordsTheDefaultBranch(t *testing.T) {
 	}
 }
 
-func TestSnapshotFailsWhenTheDefaultBranchIsUnknown(t *testing.T) {
-	boom := errors.New("gh: repo not found")
-	_, err := core.Ledger{Source: &fakeSource{branchErr: boom}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
-	if !errors.Is(err, boom) {
-		t.Fatalf("err = %v, want %v", err, boom)
+// Not knowing the default branch only costs shared-base stacks; the PRs
+// still list and PR-on-PR stacks still form.
+func TestAnUnknownDefaultBranchStillGivesASnapshot(t *testing.T) {
+	a := core.PR{Number: 1, Branch: "a", Base: "main", CreatedAt: day(1)}
+	b := core.PR{Number: 2, Branch: "b", Base: "a", CreatedAt: day(2)}
+	snap, err := core.Ledger{Source: &fakeSource{prs: []core.PR{a, b}, branchErr: errors.New("gh: repo view failed")}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || snap.DefaultBranch != "" || len(snap.Groups) != 1 || snap.Groups[0].Stack == nil {
+		t.Fatalf("snap = %+v, err %v; want the stack without a default branch", snap, err)
 	}
 }
 
@@ -64,7 +67,7 @@ func TestSnapshotHoldsEveryPRNewestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.Schema != 1 || snap.Repo != "octo/hello-world" || snap.Author != "@me" || !snap.FetchedAt.Equal(now) {
+	if snap.Schema != core.SchemaVersion || snap.Repo != "octo/hello-world" || snap.Author != "@me" || !snap.FetchedAt.Equal(now) {
 		t.Fatalf("header = %+v", snap)
 	}
 	if len(snap.Groups) != 1 || snap.Groups[0].Name != "Ungrouped" {

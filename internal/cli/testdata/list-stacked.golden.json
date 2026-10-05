@@ -1,10 +1,50 @@
 {
-  "schema": 1,
+  "schema": 2,
   "repo": "octo/hello-world",
   "author": "@me",
   "defaultBranch": "main",
   "fetchedAt": "2026-10-05T12:00:00Z",
   "groups": [
+    {
+      "name": "on integration/v2",
+      "stack": {
+        "base": "integration/v2",
+        "entries": [
+          {
+            "number": 31,
+            "depth": 0
+          },
+          {
+            "number": 35,
+            "depth": 0
+          }
+        ]
+      },
+      "prs": [
+        {
+          "number": 31,
+          "title": "feat: onboarding tour",
+          "branch": "alice/tour",
+          "base": "integration/v2",
+          "status": "open",
+          "url": "https://github.com/octo/hello-world/pull/31",
+          "createdAt": "2026-09-21T10:00:00Z",
+          "mergedAt": null,
+          "closedAt": null
+        },
+        {
+          "number": 35,
+          "title": "feat: onboarding checklist",
+          "branch": "alice/checklist",
+          "base": "integration/v2",
+          "status": "open",
+          "url": "https://github.com/octo/hello-world/pull/35",
+          "createdAt": "2026-09-26T10:00:00Z",
+          "mergedAt": null,
+          "closedAt": null
+        }
+      ]
+    },
     {
       "name": "feat(db): search index",
       "stack": {
@@ -56,31 +96,6 @@
           "status": "draft",
           "url": "https://github.com/octo/hello-world/pull/34",
           "createdAt": "2026-09-24T10:00:00Z",
-          "mergedAt": null,
-          "closedAt": null
-        }
-      ]
-    },
-    {
-      "name": "on integration/v2",
-      "stack": {
-        "base": "integration/v2",
-        "entries": [
-          {
-            "number": 31,
-            "depth": 0
-          }
-        ]
-      },
-      "prs": [
-        {
-          "number": 31,
-          "title": "feat: onboarding tour",
-          "branch": "alice/tour",
-          "base": "integration/v2",
-          "status": "open",
-          "url": "https://github.com/octo/hello-world/pull/31",
-          "createdAt": "2026-09-21T10:00:00Z",
           "mergedAt": null,
           "closedAt": null
         }

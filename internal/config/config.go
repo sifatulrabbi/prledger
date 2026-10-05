@@ -33,6 +33,8 @@ type RepoConfig struct {
 	Author     string            `yaml:"author"`
 	Limit      int               `yaml:"limit"`
 	AutoGroups *bool             `yaml:"auto_groups"`
+	// RemovedWorktreeGroups is only here to explain the removed key.
+	RemovedWorktreeGroups *bool `yaml:"worktree_groups"`
 	// TicketPrefixes limits automatic grouping to these ticket key prefixes.
 	TicketPrefixes []string      `yaml:"ticket_prefixes"`
 	Groups         []GroupConfig `yaml:"groups"`
@@ -116,6 +118,9 @@ func (f File) validate() error {
 	if err := checkPrefixes("defaults", f.Defaults.TicketPrefixes); err != nil {
 		return err
 	}
+	if err := checkRemoved("defaults", f.Defaults); err != nil {
+		return err
+	}
 	seen := map[string]string{}
 	for key, rc := range f.Repos {
 		lower := strings.ToLower(key)
@@ -126,9 +131,19 @@ func (f File) validate() error {
 		if err := checkPrefixes(key, rc.TicketPrefixes); err != nil {
 			return err
 		}
+		if err := checkRemoved(key, rc); err != nil {
+			return err
+		}
 		if _, err := compileGroups(rc.Groups); err != nil {
 			return fmt.Errorf("%s: %w", key, err)
 		}
+	}
+	return nil
+}
+
+func checkRemoved(section string, rc RepoConfig) error {
+	if rc.RemovedWorktreeGroups != nil {
+		return fmt.Errorf("%s: worktree_groups was removed (stacked PRs are grouped instead); delete the line", section)
 	}
 	return nil
 }

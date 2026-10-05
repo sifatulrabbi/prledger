@@ -234,6 +234,16 @@ func TestRepoKeysDifferingOnlyInCaseAreRejected(t *testing.T) {
 	}
 }
 
+// worktree_groups was removed when stacks replaced worktree grouping; a
+// config that still has it gets told what to do instead of a generic
+// "field not found".
+func TestTheRemovedWorktreeGroupsKeyExplainsItself(t *testing.T) {
+	err := configErr(t, "repos:\n  octo/hello-world:\n    worktree_groups: false\n")
+	if err == nil || !strings.Contains(err.Error(), "worktree_groups was removed") || !strings.Contains(err.Error(), "octo/hello-world") {
+		t.Fatalf("err = %v, want a removal note naming the section", err)
+	}
+}
+
 func TestGroupsInDefaultsAreRejected(t *testing.T) {
 	if err := configErr(t, "defaults:\n  groups:\n    - {name: X, prs: [1]}\n"); err == nil || !strings.Contains(err.Error(), "repos.") {
 		t.Fatalf("err = %v, want a hint to move groups under repos", err)

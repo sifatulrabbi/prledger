@@ -10,8 +10,8 @@ import (
 	"github.com/sifatulrabbi/prledger/internal/core"
 )
 
-// on returns a PR whose head is branch and whose base is base.
-func on(n int, branch, base string) core.PR {
+// stacked returns a PR whose head is branch and whose base is base.
+func stacked(n int, branch, base string) core.PR {
 	p := pr(n, branch, "pr "+branch)
 	p.Base = base
 	return p
@@ -46,9 +46,9 @@ func stackOf(t *testing.T, g core.Group) [][3]int {
 
 func TestAChainOfPRsIsOneStackInOrder(t *testing.T) {
 	snap := arranged(t, core.Grouping{}, "main",
-		on(3, "c", "b"),
-		on(1, "a", "main"),
-		on(2, "b", "a"),
+		stacked(3, "c", "b"),
+		stacked(1, "a", "main"),
+		stacked(2, "b", "a"),
 	)
 	if len(snap.Groups) != 1 || snap.Groups[0].Name != "pr a" {
 		t.Fatalf("groups = %v, want one stack named after its bottom PR", layoutOf(snap))
@@ -63,10 +63,10 @@ func TestAChainOfPRsIsOneStackInOrder(t *testing.T) {
 
 func TestATreeIsWalkedParentFirstChildrenOldestFirst(t *testing.T) {
 	snap := arranged(t, core.Grouping{}, "main",
-		on(1, "a", "main"),
-		on(2, "b", "a"),
-		on(3, "c", "a"),
-		on(4, "d", "c"),
+		stacked(1, "a", "main"),
+		stacked(2, "b", "a"),
+		stacked(3, "c", "a"),
+		stacked(4, "d", "c"),
 	)
 	if got, want := stackOf(t, snap.Groups[0]), [][3]int{{1, 0, 0}, {2, 1, 1}, {3, 1, 1}, {4, 3, 2}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("stack = %v, want %v", got, want)
@@ -74,7 +74,7 @@ func TestATreeIsWalkedParentFirstChildrenOldestFirst(t *testing.T) {
 }
 
 func TestMergedAndClosedPRsStayInTheirStack(t *testing.T) {
-	bottom, mid, top := on(1, "a", "main"), on(2, "b", "a"), on(3, "c", "b")
+	bottom, mid, top := stacked(1, "a", "main"), stacked(2, "b", "a"), stacked(3, "c", "b")
 	bottom.Status, mid.Status, top.Status = core.StatusMerged, core.StatusClosed, core.StatusOpen
 	snap := arranged(t, core.Grouping{}, "main", bottom, mid, top)
 	if len(snap.Groups) != 1 || len(snap.Groups[0].PRs) != 3 {
@@ -84,11 +84,14 @@ func TestMergedAndClosedPRsStayInTheirStack(t *testing.T) {
 
 func TestPRsOnASharedBranchAreAStackOnThatBranch(t *testing.T) {
 	snap := arranged(t, core.Grouping{}, "main",
-		on(5, "x", "integration/phoenix"),
-		on(6, "y", "integration/phoenix"),
-		on(7, "z", "y"),
-		on(8, "loose", "main"),
+		stacked(5, "x", "integration/phoenix"),
+		stacked(6, "y", "integration/phoenix"),
+		stacked(7, "z", "y"),
+		stacked(8, "loose", "main"),
 	)
+	if len(snap.Groups) < 1 || snap.Groups[0].Stack == nil {
+		t.Fatalf("groups = %v, want a stack first", layoutOf(snap))
+	}
 	stack := snap.Groups[0]
 	if stack.Name != "on integration/phoenix" || stack.Stack.Base != "integration/phoenix" {
 		t.Fatalf("group = %q base %q", stack.Name, stack.Stack.Base)
@@ -100,7 +103,7 @@ func TestPRsOnASharedBranchAreAStackOnThatBranch(t *testing.T) {
 }
 
 func TestALonePROnTheDefaultBranchIsLoose(t *testing.T) {
-	snap := arranged(t, core.Grouping{}, "main", on(1, "a", "main"))
+	snap := arranged(t, core.Grouping{}, "main", stacked(1, "a", "main"))
 	assertLayout(t, snap, layout{{core.UngroupedName, []int{1}}})
 	if snap.Groups[0].Stack != nil {
 		t.Fatal("Ungrouped must not be a stack")
@@ -111,9 +114,9 @@ func TestALonePROnTheDefaultBranchIsLoose(t *testing.T) {
 // PR-on-PR stacking can be told apart.
 func TestWithoutADefaultBranchOnlyPROnPRStacksForm(t *testing.T) {
 	snap := arranged(t, core.Grouping{}, "",
-		on(1, "a", "main"),
-		on(2, "b", "a"),
-		on(3, "c", "develop"),
+		stacked(1, "a", "main"),
+		stacked(2, "b", "a"),
+		stacked(3, "c", "develop"),
 	)
 	assertLayout(t, snap, layout{{"pr a", []int{1, 2}}, {core.UngroupedName, []int{3}}})
 }
@@ -121,17 +124,17 @@ func TestWithoutADefaultBranchOnlyPROnPRStacksForm(t *testing.T) {
 // Regression: cached snapshots from before stacks have no base, and an empty
 // base matched every PR with an empty head, stacking unrelated PRs.
 func TestPRsWithoutABaseAreNeverStacked(t *testing.T) {
-	snap := arranged(t, core.Grouping{}, "main", on(1, "", ""), on(2, "", ""), on(3, "a", ""))
+	snap := arranged(t, core.Grouping{}, "main", stacked(1, "", ""), stacked(2, "", ""), stacked(3, "a", ""))
 	assertLayout(t, snap, layout{{core.UngroupedName, []int{3, 2, 1}}})
 }
 
 func TestStacksComeBeforeConfigRules(t *testing.T) {
 	g := core.Grouping{Rules: []core.GroupRule{{Name: "Picked", PRs: []int{2, 9}}, {Name: "Pattern", Branch: regexp.MustCompile("^c$")}}}
 	snap := arranged(t, g, "main",
-		on(1, "a", "main"),
-		on(2, "b", "a"),
-		on(3, "c", "b"),
-		on(9, "lone", "main"),
+		stacked(1, "a", "main"),
+		stacked(2, "b", "a"),
+		stacked(3, "c", "b"),
+		stacked(9, "lone", "main"),
 	)
 	assertLayout(t, snap, layout{{"Picked", []int{9}}, {"pr a", []int{1, 2, 3}}})
 }
@@ -139,7 +142,7 @@ func TestStacksComeBeforeConfigRules(t *testing.T) {
 // Branches can be reused or retargeted into a loop; the stack still holds
 // every PR once and the walk ends.
 func TestACycleOfBasesStillEnds(t *testing.T) {
-	snap := arranged(t, core.Grouping{}, "main", on(1, "x", "y"), on(2, "y", "x"))
+	snap := arranged(t, core.Grouping{}, "main", stacked(1, "x", "y"), stacked(2, "y", "x"))
 	if len(snap.Groups) != 1 || len(snap.Groups[0].PRs) != 2 {
 		t.Fatalf("groups = %v, want one stack of both", layoutOf(snap))
 	}
@@ -147,25 +150,71 @@ func TestACycleOfBasesStillEnds(t *testing.T) {
 }
 
 // A reused head branch: a child sits on the PR with that head that was
-// created most recently before it.
+// created most recently before it; the older PR on that branch is loose.
 func TestAChildSitsOnTheLatestEarlierPRWithItsBase(t *testing.T) {
 	snap := arranged(t, core.Grouping{}, "main",
-		on(1, "a", "main"),
-		on(2, "a", "main"), // the branch was reused for a second PR
-		on(3, "b", "a"),
+		stacked(1, "a", "main"),
+		stacked(2, "a", "main"), // the branch was reused for a second PR
+		stacked(3, "b", "a"),
 	)
-	got := stackOf(t, snap.Groups[0])
-	if want := [][3]int{{1, 0, 0}, {2, 0, 0}, {3, 2, 1}}; !reflect.DeepEqual(got, want) {
+	if got, want := stackOf(t, snap.Groups[0]), [][3]int{{2, 0, 0}, {3, 2, 1}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stack = %v, want %v", got, want)
+	}
+	assertLayout(t, snap, layout{{"pr a", []int{2, 3}}, {core.UngroupedName, []int{1}}})
+}
+
+// With no earlier PR on the base branch, the child sits on the oldest later one.
+func TestAChildCanSitOnAPROpenedAfterIt(t *testing.T) {
+	snap := arranged(t, core.Grouping{}, "main", stacked(1, "b", "a"), stacked(2, "a", "main"))
+	if got, want := stackOf(t, snap.Groups[0]), [][3]int{{2, 0, 0}, {1, 2, 1}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("stack = %v, want %v", got, want)
 	}
 }
 
+// Regression: reusing a branch name merged two unrelated stacks into one.
+func TestReusedBranchNamesDoNotMergeStacks(t *testing.T) {
+	snap := arranged(t, core.Grouping{}, "main",
+		stacked(1, "patch-1", "main"), stacked(2, "x", "patch-1"),
+		stacked(3, "patch-1", "main"), stacked(4, "y", "patch-1"),
+	)
+	assertLayout(t, snap, layout{{"pr patch-1 (2)", []int{3, 4}}, {"pr patch-1", []int{1, 2}}})
+}
+
+// Regression: a PR whose head is the default branch (a release PR such as
+// develop → main, or a fork's main) became the parent of every PR based on
+// the default branch.
+func TestNothingSitsOnTheDefaultBranchAsAPR(t *testing.T) {
+	snap := arranged(t, core.Grouping{}, "develop",
+		stacked(1, "develop", "main"),
+		stacked(2, "feat-a", "develop"),
+		stacked(3, "feat-b", "develop"),
+	)
+	for _, g := range snap.Groups {
+		if g.Stack != nil && len(g.PRs) > 1 {
+			t.Fatalf("groups = %v, want no stack through the default branch", layoutOf(snap))
+		}
+	}
+}
+
+// A shared base needs company: one PR on its own branch is loose.
+func TestALonePROnASharedBranchIsLoose(t *testing.T) {
+	snap := arranged(t, core.Grouping{}, "main", stacked(1, "a", "alice/side-branch"))
+	assertLayout(t, snap, layout{{core.UngroupedName, []int{1}}})
+}
+
+// Config rules are named by the user; a stack with the same name gives way.
+func TestConfiguredGroupNamesWinOverStackNames(t *testing.T) {
+	g := core.Grouping{Rules: []core.GroupRule{{Name: "pr a", PRs: []int{9}}}}
+	snap := arranged(t, g, "main", stacked(1, "a", "main"), stacked(2, "b", "a"), stacked(9, "lone", "main"))
+	assertLayout(t, snap, layout{{"pr a", []int{9}}, {"pr a (2)", []int{1, 2}}})
+}
+
 func TestSuggestLeavesStackedPRsOut(t *testing.T) {
 	groups, alone := core.Grouping{}.Suggest([]core.PR{
-		on(1, "a/abc-11-x", "main"),
-		on(2, "a/abc-11-y", "a/abc-11-x"),
-		on(3, "a/abc-11-z", "main"),
-		on(4, "a/abc-11-w", "main"),
+		stacked(1, "a/abc-11-x", "main"),
+		stacked(2, "a/abc-11-y", "a/abc-11-x"),
+		stacked(3, "a/abc-11-z", "main"),
+		stacked(4, "a/abc-11-w", "main"),
 	}, "main")
 	if len(groups) != 1 || !equalInts(numbers(groups[0].PRs), []int{4, 3}) || len(alone) != 0 {
 		t.Fatalf("groups %v alone %v, want only #3 and #4 suggested", groups, alone)
@@ -179,7 +228,7 @@ func TestStacksDoNotDependOnPROrder(t *testing.T) {
 		r := rand.New(rand.NewPCG(seed, 3))
 		var prs []core.PR
 		for n := 1; n <= 2+r.IntN(12); n++ {
-			prs = append(prs, on(n, branches[2+r.IntN(len(branches)-2)], branches[r.IntN(len(branches))]))
+			prs = append(prs, stacked(n, branches[2+r.IntN(len(branches)-2)], branches[r.IntN(len(branches))]))
 		}
 		want := layoutOf(arranged(t, core.Grouping{Auto: true}, "main", prs...))
 		shuffled := slices.Clone(prs)

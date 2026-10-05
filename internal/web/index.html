@@ -134,13 +134,13 @@ function renderChips() {
   }
 }
 
-// place says where a stacked PR sits: "2/8 · on #6730", or what the bottom
-// PR is based on.
 function place(g, i) {
   const e = g.stack.entries[i];
   const pos = `${i + 1}/${g.prs.length}`;
   if (e.on) return `${pos} · on #${e.on}`;
-  return `${pos} · ${g.stack.base ? "on " + g.stack.base : "bottom"}`;
+  const base = g.prs[i].base || snap.defaultBranch || "";
+  if (g.stack.base) return "on " + base;
+  return base ? `${pos} · on ${base}` : pos;
 }
 
 function card(p, where) {
