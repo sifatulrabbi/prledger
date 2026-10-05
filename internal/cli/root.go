@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sifatulrabbi/prledger/internal/config"
 	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/gh"
 )
@@ -27,10 +28,13 @@ type Deps struct {
 	Runner gh.Runner
 	// DetectRepo finds the repo of the current directory.
 	DetectRepo func(ctx context.Context) (core.Repo, error)
+	// Getenv reads environment variables (config path, $HOME, $VAR expansion).
+	Getenv func(string) string
 }
 
 // globalFlags are flags every command shares.
 type globalFlags struct {
+	config string
 	repo   string
 	author string
 	limit  int
@@ -49,9 +53,10 @@ func NewRoot(d Deps) *cobra.Command {
 
 	g := &globalFlags{}
 	pf := root.PersistentFlags()
+	pf.StringVar(&g.config, "config", "", "config file (default: $PRLEDGER_CONFIG, else ~/.config/prledger/config.yaml)")
 	pf.StringVar(&g.repo, "repo", "", "repo as owner/name (default: the origin remote of the current directory)")
-	pf.StringVar(&g.author, "author", "@me", "GitHub login whose pull requests to show")
-	pf.IntVar(&g.limit, "limit", 1000, "maximum number of pull requests to fetch")
+	pf.StringVar(&g.author, "author", "", `GitHub login whose pull requests to show (default from config, else "@me")`)
+	pf.IntVar(&g.limit, "limit", 0, "maximum number of pull requests to fetch (default from config, else 1000)")
 
 	root.AddCommand(
 		&cobra.Command{
@@ -64,22 +69,73 @@ func NewRoot(d Deps) *cobra.Command {
 			},
 		},
 		newListCmd(d, g),
+		newConfigCmd(d, g),
 	)
 	return root
 }
 
-// snapshot resolves the repo and builds a Snapshot through gh.
+// configPath is the config file in use: --config, else the default lookup.
+func configPath(d Deps, g *globalFlags) (string, error) {
+	if g.config != "" {
+		return g.config, nil
+	}
+	return config.Path(d.Getenv)
+}
+
+// target is a resolved repo plus its settings, with flags applied.
+type target struct {
+	repo     core.Repo
+	settings config.Settings
+}
+
+func resolveTarget(cmd *cobra.Command, d Deps, g *globalFlags) (target, error) {
+	repo, err := resolveRepo(cmd.Context(), d, g.repo)
+	if err != nil {
+		return target{}, err
+	}
+	path, err := configPath(d, g)
+	if err != nil {
+		return target{}, err
+	}
+	file, err := config.Load(path)
+	if err != nil {
+		return target{}, err
+	}
+	s, err := file.For(repo, d.Getenv)
+	if err != nil {
+		return target{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	flags := cmd.Flags()
+	if flags.Changed("author") {
+		s.Author = g.author
+	}
+	if flags.Changed("limit") {
+		if g.limit < 1 {
+			return target{}, fmt.Errorf("--limit must be at least 1, got %d", g.limit)
+		}
+		s.Limit = g.limit
+	}
+	return target{repo: repo, settings: s}, nil
+}
+
+func (t target) ledger(d Deps) core.Ledger {
+	return core.Ledger{
+		Source: gh.Client{Runner: d.Runner, Command: t.settings.Command, Env: t.settings.Env},
+		Now:    d.Now,
+	}
+}
+
+func (t target) query() core.Query {
+	return core.Query{Repo: t.repo, Author: t.settings.Author, Limit: t.settings.Limit}
+}
+
+// snapshot resolves the repo and its settings and builds a Snapshot via gh.
 func snapshot(cmd *cobra.Command, d Deps, g *globalFlags) (core.Snapshot, error) {
-	ctx := cmd.Context()
-	repo, err := resolveRepo(ctx, d, g.repo)
+	t, err := resolveTarget(cmd, d, g)
 	if err != nil {
 		return core.Snapshot{}, err
 	}
-	ledger := core.Ledger{
-		Source: gh.Client{Runner: d.Runner, Command: []string{"gh"}},
-		Now:    d.Now,
-	}
-	return ledger.Snapshot(ctx, core.Query{Repo: repo, Author: g.author, Limit: g.limit})
+	return t.ledger(d).Snapshot(cmd.Context(), t.query())
 }
 
 func resolveRepo(ctx context.Context, d Deps, flag string) (core.Repo, error) {

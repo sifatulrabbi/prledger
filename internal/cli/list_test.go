@@ -34,7 +34,16 @@ type harness struct {
 	gh     *fakeGh
 	stdout bytes.Buffer
 	stderr bytes.Buffer
+	env    map[string]string
 	deps   Deps
+}
+
+// writeConfig writes body to the harness's config file.
+func (h *harness) writeConfig(t *testing.T, body string) {
+	t.Helper()
+	if err := os.WriteFile(h.env["PRLEDGER_CONFIG"], []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func newHarness(t *testing.T) *harness {
@@ -44,7 +53,12 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	h := &harness{gh: &fakeGh{stdout: fixture}}
+	h.env = map[string]string{
+		"HOME":            "/home/alice",
+		"PRLEDGER_CONFIG": filepath.Join(t.TempDir(), "config.yaml"), // never the real one
+	}
 	h.deps = Deps{
+		Getenv:     func(k string) string { return h.env[k] },
 		Stdout:     &h.stdout,
 		Stderr:     &h.stderr,
 		Version:    "test",

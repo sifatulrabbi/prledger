@@ -24,6 +24,7 @@ func main() {
 		Version: cli.ResolveVersion(version, info),
 		Now:     time.Now,
 		Runner:  gh.ExecRunner{},
+		Getenv:  os.Getenv,
 		DetectRepo: func(ctx context.Context) (core.Repo, error) {
 			dir, err := os.Getwd()
 			if err != nil {
