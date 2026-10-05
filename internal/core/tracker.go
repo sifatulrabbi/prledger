@@ -3,7 +3,12 @@ package core
 import (
 	"context"
 	"sync"
+	"time"
 )
+
+// DefaultFetchTimeout is long enough for gh to page through a few thousand
+// pull requests.
+const DefaultFetchTimeout = 2 * time.Minute
 
 // SnapshotCache stores the last snapshot of one repo between runs.
 type SnapshotCache interface {
@@ -16,6 +21,10 @@ type SnapshotCache interface {
 // cache, refreshes on demand, and shares one fetch between concurrent
 // refreshes.
 type Tracker struct {
+	// FetchTimeout bounds one fetch, so a hung gh cannot block every later
+	// refresh. NewTracker sets it to DefaultFetchTimeout.
+	FetchTimeout time.Duration
+
 	life  context.Context // fetches run under this, not under any one caller
 	fetch func(context.Context) (Snapshot, error)
 	cache SnapshotCache
@@ -36,7 +45,7 @@ type flight struct {
 // cancelling it stops them. A cache that fails to load is not fatal;
 // CacheError reports it.
 func NewTracker(life context.Context, fetch func(context.Context) (Snapshot, error), cache SnapshotCache) *Tracker {
-	t := &Tracker{life: life, fetch: fetch, cache: cache}
+	t := &Tracker{FetchTimeout: DefaultFetchTimeout, life: life, fetch: fetch, cache: cache}
 	snap, ok, err := cache.Load()
 	switch {
 	case err != nil:
@@ -87,7 +96,9 @@ func (t *Tracker) Refresh(ctx context.Context) (Snapshot, error) {
 func (t *Tracker) run(f *flight) {
 	// Under the tracker's life, not a caller's: one caller leaving must not
 	// cancel the fetch the others are waiting on.
-	snap, err := t.fetch(t.life)
+	ctx, cancel := context.WithTimeout(t.life, t.FetchTimeout)
+	defer cancel()
+	snap, err := t.fetch(ctx)
 	var saveErr error
 	if err == nil {
 		saveErr = t.cache.Save(snap)

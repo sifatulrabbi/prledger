@@ -85,6 +85,35 @@ func TestListPRsWrapsGhFailure(t *testing.T) {
 	}
 }
 
+func TestExecRunsAnyGhSubcommand(t *testing.T) {
+	r := &fakeRunner{stdout: "alice\n"}
+	c := Client{Runner: r, Command: []string{"env", "X=1", "gh"}, Env: map[string]string{"GH_CONFIG_DIR": "/cfg"}}
+	out, err := c.Exec(context.Background(), "api", "user", "--jq", ".login")
+	if err != nil || string(out) != "alice\n" {
+		t.Fatalf("out %q, err %v", out, err)
+	}
+	if want := []string{"env", "X=1", "gh", "api", "user", "--jq", ".login"}; !reflect.DeepEqual(r.argv, want) {
+		t.Fatalf("argv = %q, want %q", r.argv, want)
+	}
+	if want := []string{"GH_CONFIG_DIR=/cfg"}; !reflect.DeepEqual(r.env, want) {
+		t.Fatalf("env = %q, want %q", r.env, want)
+	}
+}
+
+// Hints print a command the user can paste into a shell, so values with
+// spaces or quotes must be quoted.
+func TestCommandLineIsPasteable(t *testing.T) {
+	c := Client{Command: []string{"gh"}, Env: map[string]string{"GH_CONFIG_DIR": "/Users/a b/gh", "B": "it's"}}
+	got := c.CommandLine("auth", "login")
+	want := `B='it'\''s' GH_CONFIG_DIR='/Users/a b/gh' gh auth login`
+	if got != want {
+		t.Fatalf("CommandLine = %s\nwant          %s", got, want)
+	}
+	if plain := (Client{Command: []string{"gh"}}).CommandLine("auth", "login"); plain != "gh auth login" {
+		t.Fatalf("CommandLine = %q, want plain words unquoted", plain)
+	}
+}
+
 func TestListPRsRejectsEmptyCommand(t *testing.T) {
 	_, err := Client{Runner: &fakeRunner{}, Command: nil}.ListPRs(context.Background(), query)
 	if err == nil {

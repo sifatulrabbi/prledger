@@ -89,6 +89,20 @@ func TestCachedSnapshotIsRegroupedWithTheCurrentConfig(t *testing.T) {
 	}
 }
 
+// gh also reads its account from the inherited environment, e.g.
+// `GH_CONFIG_DIR=… prledger list`; that is another account too.
+func TestCacheIsSeparateForInheritedGhEnvironment(t *testing.T) {
+	h := newHarness(t)
+	h.env["GH_CONFIG_DIR"] = "/home/alice/.config/gh-personal"
+	if err := h.run("list"); err != nil {
+		t.Fatal(err)
+	}
+	delete(h.env, "GH_CONFIG_DIR")
+	if err := h.run("list", "--cached"); err == nil || !strings.Contains(err.Error(), "no cached snapshot") {
+		t.Fatalf("err = %v, want no cache for the default account", err)
+	}
+}
+
 func TestServeStartsFromTheCacheAndReportsRefreshFailures(t *testing.T) {
 	h := newHarness(t)
 	if err := h.run("list"); err != nil { // writes the cache

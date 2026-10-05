@@ -193,13 +193,12 @@ async function call(method, path) {
   const res = await fetch(path, { method, cache: "no-store", headers: { "X-Prledger": "1" } });
   const text = await res.text();
   let body = null;
-  try { body = JSON.parse(text); } catch { /* not JSON, e.g. a proxy error page */ }
+  try { body = JSON.parse(text); } catch {}
   if (!res.ok) throw new Error((body && body.error) || text.trim() || res.statusText);
   if (body === null) throw new Error("the server sent something that is not JSON");
   return body;
 }
 
-// Refresh asks the server to run gh again. A failure keeps the data on screen.
 async function refresh() {
   const btn = $("refresh");
   btn.disabled = true;
@@ -215,6 +214,8 @@ async function refresh() {
   }
 }
 
+const FRESH_MS = 10 * 1000;
+
 async function load() {
   const embedded = $("prledger-data").textContent.trim();
   if (embedded) { setSnapshot(JSON.parse(embedded)); return; }
@@ -227,9 +228,7 @@ async function load() {
     notice("Could not load pull requests: " + err.message);
     return;
   }
-  // What loaded may be the cache; always follow with live status. This joins
-  // the fetch serve started, and shows its error if it failed.
-  refresh();
+  if (Date.now() - new Date(snap.fetchedAt).getTime() > FRESH_MS) refresh();
 }
 load();
 </script>

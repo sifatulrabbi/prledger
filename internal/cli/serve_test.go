@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
 	"sync"
@@ -135,14 +136,17 @@ func TestCtrlCDuringASlowRefreshExitsCleanly(t *testing.T) {
 	}
 	url, _ := startServe(t, h, "--no-open")
 
+	sent := make(chan struct{})
 	go func() {
-		req, _ := http.NewRequest("POST", url+"api/refresh", nil)
+		trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { close(sent) }}
+		req, _ := http.NewRequestWithContext(httptrace.WithClientTrace(context.Background(), trace), "POST", url+"api/refresh", nil)
 		req.Header.Set(server.RequestHeader, "1")
 		if res, err := http.DefaultClient.Do(req); err == nil {
 			res.Body.Close()
 		}
 	}()
-	time.Sleep(50 * time.Millisecond) // let the refresh request reach the server
+	<-sent
+	// The request is on the wire and its handler is waiting on the hung gh.
 	// startServe's cleanup now presses Ctrl-C and requires a nil error within 5s.
 }
 

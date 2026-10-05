@@ -172,6 +172,26 @@ func TestCancellingTheTrackerContextStopsTheFetch(t *testing.T) {
 	}
 }
 
+// Regression: with no time limit a hung gh (network stall, keychain prompt)
+// kept every later refresh waiting on it until Ctrl-C.
+func TestAHungFetchTimesOutAndTheNextRefreshStartsAfresh(t *testing.T) {
+	var calls atomic.Int32
+	tr := core.NewTracker(context.Background(), func(ctx context.Context) (core.Snapshot, error) {
+		calls.Add(1)
+		<-ctx.Done()
+		return core.Snapshot{}, ctx.Err()
+	}, &memCache{})
+	tr.FetchTimeout = 30 * time.Millisecond
+
+	if _, err := tr.Refresh(context.Background()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	tr.Refresh(context.Background())
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("fetch ran %d times, want a new fetch after the timeout", got)
+	}
+}
+
 // A fetch must not be cancelled because the first caller went away: the
 // others are still waiting for it.
 func TestRefreshOutlivesTheCallerThatStartedIt(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -39,10 +38,8 @@ func newDoctorCmd(d Deps, g *globalFlags) *cobra.Command {
 				return r.result()
 			}
 
-			gh := func(args ...string) ([]byte, error) {
-				return d.Runner.Run(ctx, append(slices.Clone(settings.Command), args...), envPairs(settings.Env))
-			}
-			out, err := gh("--version")
+			client := clientFor(d, settings)
+			out, err := client.Exec(ctx, "--version")
 			if err != nil {
 				r.fail("gh", err.Error(), "install gh from https://cli.github.com, or fix gh_command")
 				r.skip("gh login", "gh")
@@ -51,16 +48,16 @@ func newDoctorCmd(d Deps, g *globalFlags) *cobra.Command {
 			}
 			r.ok("gh", firstLine(out))
 
-			if _, err := gh("auth", "status"); err != nil {
-				r.fail("gh login", err.Error(), "log in the account prledger uses: "+loginCommand(settings))
+			if _, err := client.Exec(ctx, "auth", "status", "--active"); err != nil {
+				r.fail("gh login", err.Error(), "log in the account prledger uses: "+client.CommandLine("auth", "login"))
 				r.skip("gh user", "gh login")
 				return r.result()
 			}
 			r.ok("gh login", "logged in")
 
-			login, err := gh("api", "user", "--jq", ".login")
+			login, err := client.Exec(ctx, "api", "user", "--jq", ".login")
 			if err != nil {
-				r.fail("gh user", err.Error(), "check `gh api user` works")
+				r.fail("gh user", err.Error(), "see what gh says: "+client.CommandLine("api", "user"))
 			} else {
 				r.ok("gh user", "acting as "+firstLine(login))
 			}
@@ -91,23 +88,6 @@ func doctorConfig(d Deps, g *globalFlags, repo core.Repo, r *report) (config.Set
 	}
 	r.fail("config", err.Error(), "fix the file, or move it aside to use the built-in defaults")
 	return config.Settings{}, err
-}
-
-// loginCommand is the gh auth login command for the account prledger uses
-// in this repo, environment included.
-func loginCommand(s config.Settings) string {
-	parts := envPairs(s.Env)
-	parts = append(parts, s.Command...)
-	return strings.Join(append(parts, "auth", "login"), " ")
-}
-
-func envPairs(env map[string]string) []string {
-	pairs := make([]string, 0, len(env))
-	for k, v := range env {
-		pairs = append(pairs, k+"="+v)
-	}
-	slices.Sort(pairs)
-	return pairs
 }
 
 func firstLine(b []byte) string {

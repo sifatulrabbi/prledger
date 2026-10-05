@@ -76,7 +76,7 @@ func serveUntilDone(ctx context.Context, srv *http.Server, ln net.Listener) erro
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdown); err != nil {
-		srv.Close() // a request still open after the grace period is cut off
+		srv.Close()
 	}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
 		return err

@@ -125,12 +125,38 @@ func resolveTarget(cmd *cobra.Command, d Deps, g *globalFlags) (target, error) {
 	return target{repo: repo, settings: s}, nil
 }
 
+func (t target) client(d Deps) gh.Client {
+	return clientFor(d, t.settings)
+}
+
+func clientFor(d Deps, s config.Settings) gh.Client {
+	return gh.Client{Runner: d.Runner, Command: s.Command, Env: s.Env}
+}
+
 func (t target) ledger(d Deps) core.Ledger {
 	return core.Ledger{
-		Source:   gh.Client{Runner: d.Runner, Command: t.settings.Command, Env: t.settings.Env},
+		Source:   t.client(d),
 		Now:      d.Now,
 		Grouping: core.Grouping{Rules: t.settings.Groups, Auto: t.settings.AutoGroups, TicketPrefixes: t.settings.TicketPrefixes},
 	}
+}
+
+// ghAccountVars are inherited environment variables that change which
+// account gh acts as.
+var ghAccountVars = []string{"GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN", "GH_HOST", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+
+// account identifies the gh setup: its command, its configured env, and the
+// account variables it inherits. Only a hash of it is stored.
+func (t target) account(d Deps) []string {
+	id := append(gh.EnvList(t.settings.Env), t.settings.Command...)
+	for _, k := range ghAccountVars {
+		if _, set := t.settings.Env[k]; !set {
+			if v := d.Getenv(k); v != "" {
+				id = append(id, "inherited:"+k+"="+v)
+			}
+		}
+	}
+	return id
 }
 
 func (t target) query() core.Query {
@@ -141,8 +167,7 @@ func (t target) query() core.Query {
 // regrouped with the current config, which may have changed since they were
 // saved.
 func (t target) cache(d Deps) (regroupedCache, error) {
-	account := append(envPairs(t.settings.Env), t.settings.Command...)
-	file, err := cache.For(d.Getenv, t.repo, t.settings.Author, account)
+	file, err := cache.For(d.Getenv, t.repo, t.settings.Author, t.account(d))
 	if err != nil {
 		return regroupedCache{}, err
 	}

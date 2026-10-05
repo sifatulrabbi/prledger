@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
@@ -41,12 +43,41 @@ type ghPR struct {
 	ClosedAt    *time.Time `json:"closedAt"`
 }
 
-// ListPRs runs `gh pr list` for every state and maps the result.
-func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
+// Exec runs gh with args and returns its stdout.
+func (c Client) Exec(ctx context.Context, args ...string) ([]byte, error) {
 	if len(c.Command) == 0 {
 		return nil, errors.New("gh_command is empty")
 	}
-	argv := append(slices.Clone(c.Command),
+	return c.Runner.Run(ctx, append(slices.Clone(c.Command), args...), EnvList(c.Env))
+}
+
+// CommandLine is the shell command that runs gh with args the way Exec does,
+// quoted so it can be pasted into a shell (for hints).
+func (c Client) CommandLine(args ...string) string {
+	words := append(EnvList(c.Env), c.Command...)
+	words = append(words, args...)
+	for i, w := range words {
+		if k, v, ok := strings.Cut(w, "="); ok && i < len(c.Env) {
+			words[i] = k + "=" + shellQuote(v)
+		} else {
+			words[i] = shellQuote(w)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+var plainWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./~-]+$`)
+
+func shellQuote(s string) string {
+	if plainWord.MatchString(s) {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ListPRs runs `gh pr list` for every state and maps the result.
+func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
+	out, err := c.Exec(ctx,
 		"pr", "list",
 		"--repo", q.Repo.String(),
 		"--author", q.Author,
@@ -54,7 +85,6 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 		"--limit", strconv.Itoa(q.Limit),
 		"--json", prFields,
 	)
-	out, err := c.Runner.Run(ctx, argv, envList(c.Env))
 	if err != nil {
 		return nil, fmt.Errorf("listing pull requests with gh: %w", err)
 	}
@@ -98,8 +128,8 @@ func toStatus(state string, draft bool) (core.Status, error) {
 	return "", fmt.Errorf("unknown pull request state %q from gh", state)
 }
 
-// envList turns the map into sorted KEY=VALUE pairs so runs are reproducible.
-func envList(m map[string]string) []string {
+// EnvList turns the map into sorted KEY=VALUE pairs so runs are reproducible.
+func EnvList(m map[string]string) []string {
 	env := make([]string, 0, len(m))
 	for k, v := range m {
 		env = append(env, k+"="+v)
