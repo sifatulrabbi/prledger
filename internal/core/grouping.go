@@ -17,9 +17,9 @@ type GroupRule struct {
 	Title  *regexp.Regexp // optional
 }
 
-// Grouping decides which group each PR lands in. Precedence: a rule that
-// lists the PR's number, then the first rule whose pattern matches, then (if
-// Auto) automatic grouping, then Ungrouped.
+// Grouping decides which group each PR lands in. Precedence: the stack the PR
+// belongs to, then a rule that lists the PR's number, then the first rule
+// whose pattern matches, then (if Auto) automatic grouping, then Ungrouped.
 type Grouping struct {
 	Rules []GroupRule
 	Auto  bool
@@ -28,12 +28,13 @@ type Grouping struct {
 	TicketPrefixes []string
 }
 
-// Suggest runs automatic grouping over the PRs no rule claims, whether or not
-// Auto is on. It returns the linked groups (newest first) and the PRs left on
-// their own.
-func (g Grouping) Suggest(prs []PR) (groups []Group, alone []PR) {
+// Suggest runs automatic grouping over the PRs that are not stacked and that
+// no rule claims, whether or not Auto is on. It returns the linked groups
+// (newest first) and the PRs left on their own.
+func (g Grouping) Suggest(prs []PR, defaultBranch string) (groups []Group, alone []PR) {
 	keys := newKeyFinder(g.TicketPrefixes)
-	_, rest := g.split(prs)
+	_, loose := stacks(prs, defaultBranch)
+	_, rest := g.split(loose)
 	groups, alone = autoGroups(rest, keys)
 	sortGroups(groups)
 	return groups, newestFirst(alone)
@@ -69,9 +70,11 @@ func (g Grouping) split(prs []PR) (claimed []Group, rest []PR) {
 	return claimed, rest
 }
 
-func (g Grouping) arrange(prs []PR) []Group {
+func (g Grouping) arrange(prs []PR, defaultBranch string) []Group {
 	keys := newKeyFinder(g.TicketPrefixes)
-	groups, ungrouped := g.split(prs)
+	groups, loose := stacks(prs, defaultBranch)
+	claimed, ungrouped := g.split(loose)
+	groups = append(groups, claimed...)
 	if g.Auto {
 		var auto []Group
 		auto, ungrouped = autoGroups(ungrouped, keys)

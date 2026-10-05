@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +17,9 @@ import (
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
-// fakeGh stands in for the gh process: it answers every run with stdout/err
-// and records the argv and env it was given.
+// fakeGh stands in for the gh process: it answers `gh repo view` with "main"
+// and every other run with stdout/err, and records the argv and env of the
+// last call other than repo view.
 type fakeGh struct {
 	stdout []byte
 	err    error
@@ -28,9 +30,15 @@ type fakeGh struct {
 }
 
 func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
-	f.argv, f.env = argv, env
+	repoView := slices.Contains(argv, "repo") && slices.Contains(argv, "view")
+	if !repoView {
+		f.argv, f.env = argv, env // the pr list call the tests inspect
+	}
 	if f.respond != nil {
 		return f.respond(argv)
+	}
+	if repoView && f.err == nil {
+		return []byte("main\n"), nil // gh repo view … --jq .defaultBranchRef.name
 	}
 	return f.stdout, f.err
 }

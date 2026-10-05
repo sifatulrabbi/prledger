@@ -220,7 +220,7 @@ func TestSuggestSkipsClaimedPRs(t *testing.T) {
 		pr(2, "a/abc-11-y", "two"),
 		pr(3, "a/abc-11-z", "three"),
 		pr(4, "lonely", "four"),
-	})
+	}, "main")
 	if len(groups) != 1 || groups[0].Name != "ABC-11 · two" || len(groups[0].PRs) != 2 {
 		t.Fatalf("groups = %+v, want ABC-11 with #2 and #3 only", groups)
 	}

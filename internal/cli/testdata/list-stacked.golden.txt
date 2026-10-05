@@ -1,0 +1,12 @@
+octo/hello-world · 5 pull requests by @me · fetched 2026-10-05 12:00 UTC
+
+feat(db): search index (3) · stack
+  #32  merged  feat(db): search index        alice/search-index
+  #33  open    └ feat(api): search endpoint  alice/search-api
+  #34  draft     └ feat(ui): results page    alice/results
+
+on integration/v2 (1) · stack
+  #31  open  feat: onboarding tour  alice/tour
+
+Ungrouped (1)
+  #30  merged  docs: readme tweaks  alice/readme

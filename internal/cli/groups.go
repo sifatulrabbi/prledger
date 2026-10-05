@@ -32,11 +32,7 @@ func newGroupsCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var prs []core.PR
-			for _, grp := range snap.Groups {
-				prs = append(prs, grp.PRs...)
-			}
-			suggested, alone := t.ledger(d).Grouping.Suggest(prs)
+			suggested, alone := t.ledger(d).Grouping.Suggest(snap.PRs(), snap.DefaultBranch)
 			var configured []string
 			for _, rule := range t.settings.Groups {
 				configured = append(configured, rule.Name)

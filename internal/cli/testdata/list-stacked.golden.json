@@ -1,0 +1,106 @@
+{
+  "schema": 1,
+  "repo": "octo/hello-world",
+  "author": "@me",
+  "defaultBranch": "main",
+  "fetchedAt": "2026-10-05T12:00:00Z",
+  "groups": [
+    {
+      "name": "feat(db): search index",
+      "stack": {
+        "entries": [
+          {
+            "number": 32,
+            "depth": 0
+          },
+          {
+            "number": 33,
+            "on": 32,
+            "depth": 1
+          },
+          {
+            "number": 34,
+            "on": 33,
+            "depth": 2
+          }
+        ]
+      },
+      "prs": [
+        {
+          "number": 32,
+          "title": "feat(db): search index",
+          "branch": "alice/search-index",
+          "base": "main",
+          "status": "merged",
+          "url": "https://github.com/octo/hello-world/pull/32",
+          "createdAt": "2026-09-22T10:00:00Z",
+          "mergedAt": "2026-09-25T09:00:00Z",
+          "closedAt": "2026-09-25T09:00:00Z"
+        },
+        {
+          "number": 33,
+          "title": "feat(api): search endpoint",
+          "branch": "alice/search-api",
+          "base": "alice/search-index",
+          "status": "open",
+          "url": "https://github.com/octo/hello-world/pull/33",
+          "createdAt": "2026-09-23T10:00:00Z",
+          "mergedAt": null,
+          "closedAt": null
+        },
+        {
+          "number": 34,
+          "title": "feat(ui): results page",
+          "branch": "alice/results",
+          "base": "alice/search-api",
+          "status": "draft",
+          "url": "https://github.com/octo/hello-world/pull/34",
+          "createdAt": "2026-09-24T10:00:00Z",
+          "mergedAt": null,
+          "closedAt": null
+        }
+      ]
+    },
+    {
+      "name": "on integration/v2",
+      "stack": {
+        "base": "integration/v2",
+        "entries": [
+          {
+            "number": 31,
+            "depth": 0
+          }
+        ]
+      },
+      "prs": [
+        {
+          "number": 31,
+          "title": "feat: onboarding tour",
+          "branch": "alice/tour",
+          "base": "integration/v2",
+          "status": "open",
+          "url": "https://github.com/octo/hello-world/pull/31",
+          "createdAt": "2026-09-21T10:00:00Z",
+          "mergedAt": null,
+          "closedAt": null
+        }
+      ]
+    },
+    {
+      "name": "Ungrouped",
+      "prs": [
+        {
+          "number": 30,
+          "title": "docs: readme tweaks",
+          "branch": "alice/readme",
+          "base": "main",
+          "status": "merged",
+          "url": "https://github.com/octo/hello-world/pull/30",
+          "createdAt": "2026-09-20T10:00:00Z",
+          "mergedAt": "2026-09-20T12:00:00Z",
+          "closedAt": "2026-09-20T12:00:00Z"
+        }
+      ]
+    }
+  ]
+}

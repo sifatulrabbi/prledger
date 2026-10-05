@@ -29,12 +29,13 @@ type Client struct {
 	Env     map[string]string // extra environment for gh
 }
 
-const prFields = "number,title,headRefName,state,isDraft,url,createdAt,mergedAt,closedAt"
+const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt"
 
 type ghPR struct {
 	Number      int        `json:"number"`
 	Title       string     `json:"title"`
 	HeadRefName string     `json:"headRefName"`
+	BaseRefName string     `json:"baseRefName"`
 	State       string     `json:"state"`
 	IsDraft     bool       `json:"isDraft"`
 	URL         string     `json:"url"`
@@ -103,6 +104,7 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 			Number:    r.Number,
 			Title:     r.Title,
 			Branch:    r.HeadRefName,
+			Base:      r.BaseRefName,
 			Status:    status,
 			URL:       r.URL,
 			CreatedAt: r.CreatedAt,
@@ -111,6 +113,19 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 		})
 	}
 	return prs, nil
+}
+
+// DefaultBranch asks gh for the repo's default branch.
+func (c Client) DefaultBranch(ctx context.Context, repo core.Repo) (string, error) {
+	out, err := c.Exec(ctx, "repo", "view", repo.String(), "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name")
+	if err != nil {
+		return "", fmt.Errorf("reading the default branch with gh: %w", err)
+	}
+	name := strings.TrimSpace(string(out))
+	if name == "" {
+		return "", fmt.Errorf("gh named no default branch for %s", repo)
+	}
+	return name, nil
 }
 
 func toStatus(state string, draft bool) (core.Status, error) {

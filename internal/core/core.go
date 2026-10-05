@@ -31,6 +31,7 @@ type PR struct {
 	Number    int        `json:"number"`
 	Title     string     `json:"title"`
 	Branch    string     `json:"branch"`
+	Base      string     `json:"base"` // the branch it merges into; "" in snapshots from before stacks
 	Status    Status     `json:"status"`
 	URL       string     `json:"url"`
 	CreatedAt time.Time  `json:"createdAt"`
@@ -48,4 +49,7 @@ type Query struct {
 // PRSource is the port to wherever pull requests come from (gh in practice).
 type PRSource interface {
 	ListPRs(ctx context.Context, q Query) ([]PR, error)
+	// DefaultBranch is the branch the repo merges into by default; PRs based
+	// on any other branch that is not a PR of theirs are on a shared base.
+	DefaultBranch(ctx context.Context, repo Repo) (string, error)
 }

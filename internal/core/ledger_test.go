@@ -10,14 +10,38 @@ import (
 )
 
 type fakeSource struct {
-	prs   []core.PR
-	err   error
-	query core.Query
+	prs           []core.PR
+	err           error
+	query         core.Query
+	defaultBranch string // "main" when empty
+	branchErr     error
 }
 
 func (f *fakeSource) ListPRs(_ context.Context, q core.Query) ([]core.PR, error) {
 	f.query = q
 	return f.prs, f.err
+}
+
+func (f *fakeSource) DefaultBranch(context.Context, core.Repo) (string, error) {
+	if f.defaultBranch == "" {
+		return "main", f.branchErr
+	}
+	return f.defaultBranch, f.branchErr
+}
+
+func TestSnapshotRecordsTheDefaultBranch(t *testing.T) {
+	snap, err := core.Ledger{Source: &fakeSource{defaultBranch: "trunk"}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || snap.DefaultBranch != "trunk" {
+		t.Fatalf("DefaultBranch = %q, err %v", snap.DefaultBranch, err)
+	}
+}
+
+func TestSnapshotFailsWhenTheDefaultBranchIsUnknown(t *testing.T) {
+	boom := errors.New("gh: repo not found")
+	_, err := core.Ledger{Source: &fakeSource{branchErr: boom}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want %v", err, boom)
+	}
 }
 
 var (
