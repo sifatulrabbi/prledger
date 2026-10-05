@@ -197,6 +197,18 @@ func TestGroupsSortNewestFirstAndUngroupedLast(t *testing.T) {
 	})
 }
 
+// A cached snapshot was grouped with the config of its day; regrouping
+// applies today's config without fetching.
+func TestRegroupAppliesTheCurrentGrouping(t *testing.T) {
+	old := snapshotOf(t, core.Grouping{}, pr(1, "a", "one"), pr(2, "b", "two"))
+	l := core.Ledger{Grouping: core.Grouping{Rules: []core.GroupRule{{Name: "Picked", PRs: []int{1}}}}}
+	got := l.Regroup(old)
+	assertLayout(t, got, layout{{"Picked", []int{1}}, {core.UngroupedName, []int{2}}})
+	if got.Repo != old.Repo || !got.FetchedAt.Equal(old.FetchedAt) {
+		t.Fatalf("header changed: %+v", got)
+	}
+}
+
 func TestRulesThatMatchNothingAreLeftOut(t *testing.T) {
 	g := core.Grouping{Rules: []core.GroupRule{{Name: "Empty", PRs: []int{42}}}}
 	snap := snapshotOf(t, g, pr(1, "a", "one"))

@@ -15,11 +15,54 @@ import (
 )
 
 type fakeSnapshots struct {
-	snap core.Snapshot
-	err  error
+	snap       core.Snapshot
+	err        error
+	refreshed  core.Snapshot
+	refreshErr error
 }
 
 func (f fakeSnapshots) Current(context.Context) (core.Snapshot, error) { return f.snap, f.err }
+func (f fakeSnapshots) Refresh(context.Context) (core.Snapshot, error) {
+	return f.refreshed, f.refreshErr
+}
+
+func TestRefreshReturnsTheNewSnapshot(t *testing.T) {
+	fresh := sample
+	fresh.Repo = "octo/refreshed"
+	res := do(t, New(fakeSnapshots{snap: sample, refreshed: fresh}, []byte(page)), "POST", "/api/refresh")
+	var got core.Snapshot
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil || res.StatusCode != 200 || got.Repo != "octo/refreshed" {
+		t.Fatalf("status %d, snapshot %+v, err %v", res.StatusCode, got, err)
+	}
+}
+
+func TestRefreshFailureIsAJSONError(t *testing.T) {
+	res := do(t, New(fakeSnapshots{snap: sample, refreshErr: errors.New("gh: rate limited")}, []byte(page)), "POST", "/api/refresh")
+	var got struct{ Error string }
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil || res.StatusCode != 502 || got.Error != "gh: rate limited" {
+		t.Fatalf("status %d, body %+v, err %v", res.StatusCode, got, err)
+	}
+}
+
+// Another site's form can POST to 127.0.0.1, but it cannot add a custom
+// header without a CORS preflight, which the server never answers.
+func TestRefreshNeedsThePrledgerHeader(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/refresh", nil)
+	req.Host = "127.0.0.1:4321"
+	rec := httptest.NewRecorder()
+	New(fakeSnapshots{snap: sample}, []byte(page)).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("POST without %s = %d, want 403", RequestHeader, rec.Code)
+	}
+}
+
+// Refresh runs gh, so it must not be triggerable by a plain GET (a link or
+// an <img> on another page).
+func TestRefreshNeedsPOST(t *testing.T) {
+	if res := do(t, New(fakeSnapshots{snap: sample}, []byte(page)), "GET", "/api/refresh"); res.StatusCode != 405 {
+		t.Fatalf("GET /api/refresh = %d, want 405", res.StatusCode)
+	}
+}
 
 var sample = core.Snapshot{
 	Schema: 1, Repo: "octo/hello-world", Author: "@me",
@@ -33,6 +76,9 @@ func do(t *testing.T, h http.Handler, method, target string) *http.Response {
 	t.Helper()
 	req := httptest.NewRequest(method, target, nil)
 	req.Host = "127.0.0.1:4321"
+	if method == "POST" {
+		req.Header.Set(RequestHeader, "1")
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec.Result()

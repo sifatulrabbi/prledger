@@ -31,6 +31,7 @@ h1 { margin: 0; font-size: 22px; font-weight: 600; overflow-wrap: anywhere; }
 .chip, .btn { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
   border-radius: 999px; padding: 5px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.btn[disabled] { opacity: .6; cursor: progress; }
 .chip[aria-pressed="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
 #q { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
@@ -72,6 +73,7 @@ summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhe
       <h1 id="title">prledger</h1>
       <div class="meta" id="meta">Loading pull requests…</div>
     </div>
+    <button class="btn" id="refresh" type="button" hidden>Refresh</button>
   </header>
   <div class="notice" id="notice" hidden></div>
   <div class="bar" role="toolbar" aria-label="Filter pull requests">
@@ -186,18 +188,45 @@ function render() {
 
 $("q").addEventListener("input", render);
 
+async function call(method, path) {
+  const res = await fetch(path, { method, cache: "no-store", headers: { "X-Prledger": "1" } });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+// Refresh asks the server to run gh again. A failure keeps the data on screen.
+async function refresh() {
+  const btn = $("refresh");
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try {
+    setSnapshot(await call("POST", "api/refresh"));
+    notice("");
+  } catch (err) {
+    notice("Refresh failed, showing the last data: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Refresh";
+  }
+}
+
+const STALE_MS = 60 * 1000;
+
 async function load() {
   const embedded = $("prledger-data").textContent.trim();
   if (embedded) { setSnapshot(JSON.parse(embedded)); return; }
+  $("refresh").hidden = false;
+  $("refresh").addEventListener("click", refresh);
   try {
-    const res = await fetch("api/snapshot", { cache: "no-store" });
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || res.statusText);
-    setSnapshot(body);
+    setSnapshot(await call("GET", "api/snapshot"));
   } catch (err) {
     $("meta").textContent = "";
     notice("Could not load pull requests: " + err.message);
+    return;
   }
+  // A snapshot from the cache may be old; the server is already fetching.
+  if (Date.now() - new Date(snap.fetchedAt).getTime() > STALE_MS) refresh();
 }
 load();
 </script>

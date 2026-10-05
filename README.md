@@ -16,6 +16,7 @@ You need `gh` installed and logged in (`gh auth login`). Go 1.27 or newer is nee
 
 ```sh
 cd path/to/your/repo
+prledger serve           # opens your PRs in the browser
 prledger list            # table of your PRs, grouped
 prledger list --json     # the same data as JSON
 ```
@@ -26,7 +27,8 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 
 | Command | What it does |
 | --- | --- |
-| `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. |
+| `prledger serve` | Opens a page in your browser with every pull request as a card, grouped, with status filters and search. Click a card to open the PR on GitHub. `--port n` picks the port, `--no-open` skips opening the browser. Press Ctrl-C to stop. |
+| `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger config path` | Prints the config file prledger reads, and says if it does not exist yet. |
 | `prledger config init` | Writes a commented starter config. Never overwrites an existing file. |
 | `prledger version` | Prints the version. |
@@ -92,6 +94,12 @@ repos:
 ```
 
 To log that account in once: `GH_CONFIG_DIR=~/.config/gh-personal gh auth login`.
+
+## The browser page
+
+`prledger serve` listens on `127.0.0.1` only and answers only requests addressed to localhost. The page shows the last fetched data right away and refreshes it in the background when it is more than a minute old. Use the **Refresh** button for the latest status. If a refresh fails (for example `gh` is logged out), the page keeps the data it has and shows the error.
+
+Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), one file per repo and author. Deleting it is safe.
 
 ## How grouping works
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/sifatulrabbi/prledger/internal/cache"
 	"github.com/sifatulrabbi/prledger/internal/config"
 	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/gh"
@@ -133,13 +134,39 @@ func (t target) query() core.Query {
 	return core.Query{Repo: t.repo, Author: t.settings.Author, Limit: t.settings.Limit}
 }
 
-// snapshot resolves the repo and its settings and builds a Snapshot via gh.
-func snapshot(cmd *cobra.Command, d Deps, g *globalFlags) (core.Snapshot, error) {
-	t, err := resolveTarget(cmd, d, g)
+// cache is the on-disk snapshot cache for this target. Loaded snapshots are
+// regrouped with the current config, which may have changed since they were
+// saved.
+func (t target) cache(d Deps) (regroupedCache, error) {
+	file, err := cache.For(d.Getenv, t.repo, t.settings.Author)
 	if err != nil {
-		return core.Snapshot{}, err
+		return regroupedCache{}, err
 	}
-	return t.ledger(d).Snapshot(cmd.Context(), t.query())
+	return regroupedCache{File: file, ledger: t.ledger(d)}, nil
+}
+
+// tracker fetches through gh and keeps the cache up to date.
+func (t target) tracker(d Deps) (*core.Tracker, error) {
+	c, err := t.cache(d)
+	if err != nil {
+		return nil, err
+	}
+	l := t.ledger(d)
+	fetch := func(ctx context.Context) (core.Snapshot, error) { return l.Snapshot(ctx, t.query()) }
+	return core.NewTracker(fetch, c), nil
+}
+
+type regroupedCache struct {
+	cache.File
+	ledger core.Ledger
+}
+
+func (c regroupedCache) Load() (core.Snapshot, bool, error) {
+	snap, ok, err := c.File.Load()
+	if ok {
+		snap = c.ledger.Regroup(snap)
+	}
+	return snap, ok, err
 }
 
 func resolveRepo(ctx context.Context, d Deps, flag string) (core.Repo, error) {

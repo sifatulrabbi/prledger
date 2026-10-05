@@ -56,6 +56,20 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	}, nil
 }
 
+// Regroup re-arranges a snapshot's PRs with the Ledger's grouping, e.g. a
+// cached snapshot after the config changed. It does not fetch.
+func (l Ledger) Regroup(s Snapshot) Snapshot {
+	var prs []PR
+	for _, g := range s.Groups {
+		prs = append(prs, g.PRs...)
+	}
+	s.Groups = l.Grouping.arrange(prs)
+	if s.Groups == nil {
+		s.Groups = []Group{}
+	}
+	return s
+}
+
 // olderFirst orders PRs by creation time, then number.
 func olderFirst(a, b PR) int {
 	if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {

@@ -11,7 +11,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/server"
 	"github.com/sifatulrabbi/prledger/internal/web"
 )
@@ -29,13 +28,24 @@ func newServeCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			tr, err := t.tracker(d)
+			if err != nil {
+				return err
+			}
+			if cerr := tr.CacheError(); cerr != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: ignoring the cache: %v\n", cerr)
+			}
 			ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 			if err != nil {
 				return fmt.Errorf("starting the server: %w", err)
 			}
+			// Start fetching now; the page shows the cached snapshot meanwhile
+			// and its first refresh joins this fetch.
+			go tr.Refresh(context.Background())
+
 			url := fmt.Sprintf("http://%s/", ln.Addr())
 			srv := &http.Server{
-				Handler:           server.New(liveSnapshots{t: t, d: d}, web.Page()),
+				Handler:           server.New(tr, web.Page()),
 				ReadHeaderTimeout: 10 * time.Second,
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Serving %s at %s (Ctrl-C to stop)\n", t.repo, url)
@@ -70,14 +80,4 @@ func serveUntilDone(ctx context.Context, srv *http.Server, ln net.Listener) erro
 		return err
 	}
 	return nil
-}
-
-// liveSnapshots fetches a fresh snapshot through gh on every request.
-type liveSnapshots struct {
-	t target
-	d Deps
-}
-
-func (l liveSnapshots) Current(ctx context.Context) (core.Snapshot, error) {
-	return l.t.ledger(l.d).Snapshot(ctx, l.t.query())
 }

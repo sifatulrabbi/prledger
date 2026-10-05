@@ -14,7 +14,12 @@ import (
 // Snapshots is what the server needs from the core.
 type Snapshots interface {
 	Current(ctx context.Context) (core.Snapshot, error)
+	Refresh(ctx context.Context) (core.Snapshot, error)
 }
+
+// RequestHeader must be set on POST requests. The page sets it; a form on
+// another site cannot.
+const RequestHeader = "X-Prledger"
 
 // New returns the handler for `prledger serve`.
 func New(src Snapshots, page []byte) http.Handler {
@@ -26,6 +31,18 @@ func New(src Snapshots, page []byte) http.Handler {
 	})
 	mux.HandleFunc("GET /api/snapshot", func(w http.ResponseWriter, r *http.Request) {
 		snap, err := src.Current(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, snap)
+	})
+	mux.HandleFunc("POST /api/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(RequestHeader) == "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing " + RequestHeader + " header"})
+			return
+		}
+		snap, err := src.Refresh(r.Context())
 		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return

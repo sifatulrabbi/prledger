@@ -56,6 +56,7 @@ func newHarness(t *testing.T) *harness {
 	h.env = map[string]string{
 		"HOME":            "/home/alice",
 		"PRLEDGER_CONFIG": filepath.Join(t.TempDir(), "config.yaml"), // never the real one
+		"XDG_CACHE_HOME":  t.TempDir(),
 	}
 	h.deps = Deps{
 		Getenv:     func(k string) string { return h.env[k] },
