@@ -12,10 +12,12 @@ Go 1.27 CLI (cobra) that lists the current `gh` user's PRs in the current repo, 
 - Config is validated as a whole at load (every repo section), not just the section in use.
 - `serve` security model (`internal/server`): binds 127.0.0.1 only; refuses non-loopback `Host` headers (DNS rebinding); `POST /api/refresh` requires the `X-Prledger` header (cross-site forms cannot send it, and preflights are never granted); every response carries a strict CSP and `nosniff`. Keep all three when adding endpoints; anything that runs gh must be POST.
 - `core.Tracker` (serve only) runs fetches under serve's lifetime context, not a caller's: one browser tab leaving must not cancel a fetch others wait on, but Ctrl-C must stop gh. `list`/`export`/`groups suggest` fetch directly under the command context via `snapshotFor`.
-- The cache file is keyed by repo, author and a hash of the gh command + env, because `@me` is a different user per gh setup. Cached snapshots are regrouped with the current config on load.
+- The cache file is keyed by repo, author and a hash of the gh setup (command, `gh_env`, and inherited account variables such as `GH_CONFIG_DIR`/`GH_TOKEN`), because `@me` is a different user per setup. `gh auth switch` inside one config dir is not detected. Cached snapshots are regrouped with the current config on load.
+- All gh invocations go through `gh.Client` (`Exec`, `ListPRs`, `CommandLine` for pasteable hints). Do not build gh argv elsewhere.
+- Text from PRs (titles, branches) is untrusted: it goes through `textContent` in the page, JSON escaping in exports, and `oneLine` before YAML comments.
 - Test fixtures are synthetic. Never commit real PR data from other repos.
 - No GitHub workflows. Verify locally with `make check` (gofmt, vet, race tests) before every commit. Releases are Makefile targets (`release-dry`, `release`); see the README's Releasing section. Keep release logic in the Makefile, not in separate scripts.
 
 ## Developing in this repo
 
-The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote uses the `personal.github.com` SSH host alias; plain `github.com` authenticates as the work account.
+The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias for `GH_CONFIG_DIR=$HOME/.config/gh-personal`, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote uses the `personal.github.com` SSH host alias; plain `github.com` authenticates as the work account.

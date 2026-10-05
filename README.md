@@ -10,7 +10,9 @@ Run `prledger` inside any git checkout. It asks the [GitHub CLI](https://cli.git
 go install github.com/sifatulrabbi/prledger@latest
 ```
 
-You need `gh` installed and logged in (`gh auth login`). Go 1.27 or newer is needed to build from source.
+Or download an archive for your system from the [releases page](https://github.com/sifatulrabbi/prledger/releases), unpack it and put `prledger` on your `PATH`. `checksums.txt` on the same page lets you verify the download.
+
+You need `gh` installed and logged in (`gh auth login`). Go 1.27 or newer is needed to build from source. If something does not work, run `prledger doctor` first; it says what is wrong and how to fix it.
 
 ## Quick start
 
@@ -30,8 +32,8 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 | `prledger serve` | Opens a page in your browser with every pull request as a card, grouped, with status filters and search. Click a card to open the PR on GitHub. `--port n` picks the port, `--no-open` skips opening the browser. Press Ctrl-C to stop. |
 | `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger export html` | Writes the same page as one standalone file you can open or share, with the data baked in. Default file: `prledger-<owner>-<repo>.html` in the current folder; `-o file` picks another. `--cached` uses the last fetched data. |
-| `prledger groups suggest` | Prints a `groups:` block built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. Paste it into your config and rename the groups. `--cached` uses the last fetched data. |
-| `prledger doctor` | Checks, one line each, that the config loads, the repo is detected, `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
+| `prledger groups suggest` | Prints groups built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. With no groups configured yet it prints a `groups:` block to paste under the repo; otherwise it prints list items to append under your existing `groups:`. Rename them as you like. `--cached` uses the last fetched data. |
+| `prledger doctor` | Checks, one line each, that the repo is detected, the config loads, `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
 | `prledger config path` | Prints the config file prledger reads, and says if it does not exist yet. |
 | `prledger config init` | Writes a commented starter config. Never overwrites an existing file. |
 | `prledger version` | Prints the version. |
@@ -102,7 +104,7 @@ To log that account in once: `GH_CONFIG_DIR=~/.config/gh-personal gh auth login`
 
 `prledger serve` listens on `127.0.0.1` only and answers only requests addressed to localhost. The page shows the last fetched data right away, then asks `gh` for the current status; use the **Refresh** button to ask again later. If a refresh fails (for example `gh` is logged out), the page keeps the data it has and shows the error.
 
-Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), one file per repo and author. Deleting it is safe.
+Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), one file per repo, author and `gh` setup, so two accounts never see each other's data. Deleting it is safe.
 
 ## How grouping works
 
@@ -129,6 +131,8 @@ make release VERSION=v0.1.0         # tag, push the tag, publish the GitHub rele
 ```
 
 `make release` refuses uncommitted changes or a tag that already exists, runs `make check`, cross-builds archives for macOS, Linux and Windows (amd64 and arm64) with the version baked in, writes `checksums.txt`, checks that the built binary reports the version, then tags, pushes and runs `gh release create` with generated notes. Everything lands in `dist/`.
+
+It only releases a commit that is already on `origin/main` (set `ALLOW_BRANCH=1` to release another branch). If the GitHub step fails after the tag was pushed, fix the cause and run `make publish VERSION=v0.1.0` from the tagged commit to finish; to start over instead, delete the tag with `git tag -d v0.1.0 && git push origin :refs/tags/v0.1.0`.
 
 It publishes with whatever account `gh` is logged in as. To use another account, set its config folder for the run, for example `GH_CONFIG_DIR=~/.config/gh-personal make release VERSION=v0.1.0`, or pass the command as `GH="env GH_CONFIG_DIR=… gh"`.
 

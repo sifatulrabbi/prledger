@@ -9,6 +9,9 @@
 
 VERSION ?=
 GH      ?= gh
+# Recipes read the version as "$$VERSION" until it is validated, so a value
+# with quotes or semicolons cannot run as shell.
+export VERSION
 DIST    := dist
 TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64
 # owner/name from the origin remote; works with SSH host aliases.
@@ -16,7 +19,7 @@ REPO     = $(shell git remote get-url origin | sed -E 's|\.git$$||; s|.*[:/]([^/
 
 # Release steps must run in order.
 .NOTPARALLEL:
-.PHONY: check build clean version guard dist verify release-dry release
+.PHONY: check build clean version guard dist verify release-dry release publish
 
 check:
 	@unformatted=$$(gofmt -l .); if [ -n "$$unformatted" ]; then echo "gofmt needed:"; echo "$$unformatted"; exit 1; fi
@@ -30,15 +33,21 @@ clean:
 	rm -rf $(DIST) prledger
 
 version:
-	@echo "$(VERSION)" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$$' \
-		|| { echo "set VERSION=vX.Y.Z (or vX.Y.Z-rc.1), got '$(VERSION)'"; exit 2; }
+	@printf '%s\n' "$$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$$' \
+		|| { echo "set VERSION=vX.Y.Z (or vX.Y.Z-rc.1)"; exit 2; }
 
-# Refuse to release uncommitted work or reuse a tag.
+# Refuse to release uncommitted or unpushed work, or to reuse a tag.
+# ALLOW_BRANCH=1 permits releasing from a branch other than main.
 guard: version
 	@test -z "$$(git status --porcelain)" || { echo "the working tree has uncommitted changes; commit them first"; exit 1; }
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || [ "$(ALLOW_BRANCH)" = 1 ] \
+		|| { echo "releases are cut from main (on $$(git rev-parse --abbrev-ref HEAD)); set ALLOW_BRANCH=1 to override"; exit 1; }
+	@git fetch -q origin main || { echo "could not fetch origin"; exit 1; }
+	@git merge-base --is-ancestor HEAD origin/main || [ "$(ALLOW_BRANCH)" = 1 ] \
+		|| { echo "HEAD is not on origin/main; push it first"; exit 1; }
 	@! git rev-parse -q --verify "refs/tags/$(VERSION)" >/dev/null || { echo "tag $(VERSION) already exists locally"; exit 1; }
-	@test -z "$$(git ls-remote --tags origin refs/tags/$(VERSION))" || { echo "tag $(VERSION) already exists on origin"; exit 1; }
-	@[ "$$(git rev-parse --abbrev-ref HEAD)" = main ] || echo "warning: releasing from $$(git rev-parse --abbrev-ref HEAD), not main"
+	@remote=$$(git ls-remote --tags origin "refs/tags/$(VERSION)") || { echo "could not reach origin to check tags"; exit 1; }; \
+		test -z "$$remote" || { echo "tag $(VERSION) already exists on origin"; exit 1; }
 
 # Cross-build archives with the version baked in, plus checksums.
 dist: version
@@ -71,5 +80,12 @@ release-dry: guard check verify
 release: guard check verify
 	git tag -a $(VERSION) -m "prledger $(VERSION)"
 	git push origin $(VERSION)
+	$(MAKE) --no-print-directory publish
+
+# Publish an already pushed tag. Also the way to finish a release whose
+# gh step failed: `make publish VERSION=vX.Y.Z` from the tagged commit.
+publish: verify
+	@[ "$$(git rev-parse HEAD)" = "$$(git rev-parse "$(VERSION)^{commit}" 2>/dev/null)" ] \
+		|| { echo "HEAD is not the commit tagged $(VERSION); check it out first"; exit 1; }
 	$(GH) release create $(VERSION) --repo $(REPO) --verify-tag --generate-notes --title $(VERSION) $(DIST)/*
 	@echo "Released $(VERSION). Install with: go install github.com/$(REPO)@$(VERSION)"
