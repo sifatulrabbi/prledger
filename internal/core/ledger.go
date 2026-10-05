@@ -24,10 +24,7 @@ type Snapshot struct {
 // Group is a named set of PRs that belong to one piece of work.
 type Group struct {
 	Name string `json:"name"`
-	// Worktree is the path of the local git worktree the group comes from;
-	// empty for other groups.
-	Worktree string `json:"worktree,omitempty"`
-	PRs      []PR   `json:"prs"`
+	PRs  []PR   `json:"prs"`
 }
 
 // UngroupedName is the group that holds PRs no rule claimed.

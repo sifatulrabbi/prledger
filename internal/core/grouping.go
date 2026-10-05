@@ -18,49 +18,31 @@ type GroupRule struct {
 }
 
 // Grouping decides which group each PR lands in. Precedence: a rule that
-// lists the PR's number, then the first rule whose pattern matches, then the
-// worktree that checked the branch out, then (if Auto) automatic grouping,
-// then Ungrouped.
+// lists the PR's number, then the first rule whose pattern matches, then (if
+// Auto) automatic grouping, then Ungrouped.
 type Grouping struct {
-	Rules     []GroupRule
-	Worktrees []Worktree
-	Auto      bool
+	Rules []GroupRule
+	Auto  bool
 	// TicketPrefixes, when set, are the only ticket key prefixes automatic
 	// grouping recognises (e.g. "SEQ" for SEQ-123). Unset means guess.
 	TicketPrefixes []string
 }
 
-// Suggest runs automatic grouping over the PRs no rule or worktree claims,
-// whether or not Auto is on. It returns the linked groups (newest first) and
-// the PRs left on their own.
+// Suggest runs automatic grouping over the PRs no rule claims, whether or not
+// Auto is on. It returns the linked groups (newest first) and the PRs left on
+// their own.
 func (g Grouping) Suggest(prs []PR) (groups []Group, alone []PR) {
 	keys := newKeyFinder(g.TicketPrefixes)
-	_, rest := g.split(prs, keys)
+	_, rest := g.split(prs)
 	groups, alone = autoGroups(rest, keys)
 	sortGroups(groups)
 	return groups, newestFirst(alone)
 }
 
-// split applies everything before automatic grouping: config rules, then
-// worktrees (pulling in linked PRs when Auto is on). It returns those groups,
-// uniquely named, and the PRs left over. arrange and Suggest share it so they
-// always agree on what is left.
-func (g Grouping) split(prs []PR, keys keyFinder) (claimed []Group, rest []PR) {
-	claimed, inWorktree, rest, owners := g.claim(prs)
-	if g.Auto {
-		inWorktree, rest = extendWorktrees(owners, inWorktree, rest, keys)
-	}
-	for i, w := range g.Worktrees {
-		if len(inWorktree[i]) > 0 {
-			claimed = append(claimed, Group{Name: w.Name, Worktree: w.Path, PRs: newestFirst(inWorktree[i])})
-		}
-	}
-	return claimed, rest
-}
-
-// claim builds the groups config rules claim, splits off the PRs on branches
-// each worktree owns, and returns the PRs left over.
-func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest []PR, owners map[string]int) {
+// split applies everything before automatic grouping and returns those
+// groups and the PRs left over. arrange and Suggest share it so they always
+// agree on what is left.
+func (g Grouping) split(prs []PR) (claimed []Group, rest []PR) {
 	byNumber := map[int]int{}
 	for i, r := range g.Rules {
 		for _, n := range r.PRs {
@@ -69,32 +51,27 @@ func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest 
 			}
 		}
 	}
-	owners = worktreeOwners(g.Worktrees)
-
 	ruled := make([][]PR, len(g.Rules))
-	inWorktree = make([][]PR, len(g.Worktrees))
 	for _, p := range prs {
 		if i, ok := byNumber[p.Number]; ok {
 			ruled[i] = append(ruled[i], p)
 		} else if i := g.firstPatternMatch(p); i >= 0 {
 			ruled[i] = append(ruled[i], p)
-		} else if i, ok := owners[p.Branch]; ok {
-			inWorktree[i] = append(inWorktree[i], p)
 		} else {
 			rest = append(rest, p)
 		}
 	}
 	for i, r := range g.Rules {
 		if len(ruled[i]) > 0 {
-			ruledGroups = append(ruledGroups, Group{Name: r.Name, PRs: newestFirst(ruled[i])})
+			claimed = append(claimed, Group{Name: r.Name, PRs: newestFirst(ruled[i])})
 		}
 	}
-	return ruledGroups, inWorktree, rest, owners
+	return claimed, rest
 }
 
 func (g Grouping) arrange(prs []PR) []Group {
 	keys := newKeyFinder(g.TicketPrefixes)
-	groups, ungrouped := g.split(prs, keys)
+	groups, ungrouped := g.split(prs)
 	if g.Auto {
 		var auto []Group
 		auto, ungrouped = autoGroups(ungrouped, keys)

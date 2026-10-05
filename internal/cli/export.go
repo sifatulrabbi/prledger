@@ -29,10 +29,6 @@ func newExportCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// An export is meant to be shared; local worktree paths stay home.
-			for i := range snap.Groups {
-				snap.Groups[i].Worktree = ""
-			}
 			page, err := web.Export(snap)
 			if err != nil {
 				return err
