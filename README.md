@@ -118,6 +118,20 @@ Each pull request lands in exactly one group, decided in this order:
 
 Groups are listed with the most recent work first; Ungrouped comes last.
 
+## Releasing
+
+Releases are cut locally with `make`; there are no CI workflows. From a clean `main`:
+
+```sh
+make check                          # gofmt, vet and race tests
+make release-dry VERSION=v0.1.0     # build and verify everything, publish nothing
+make release VERSION=v0.1.0         # tag, push the tag, publish the GitHub release
+```
+
+`make release` refuses uncommitted changes or a tag that already exists, runs `make check`, cross-builds archives for macOS, Linux and Windows (amd64 and arm64) with the version baked in, writes `checksums.txt`, checks that the built binary reports the version, then tags, pushes and runs `gh release create` with generated notes. Everything lands in `dist/`.
+
+It publishes with whatever account `gh` is logged in as. To use another account, set its config folder for the run, for example `GH_CONFIG_DIR=~/.config/gh-personal make release VERSION=v0.1.0`, or pass the command as `GH="env GH_CONFIG_DIR=… gh"`.
+
 ## License
 
 MIT

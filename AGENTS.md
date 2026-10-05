@@ -14,8 +14,8 @@ Go 1.27 CLI (cobra) that lists the current `gh` user's PRs in the current repo, 
 - `core.Tracker` (serve only) runs fetches under serve's lifetime context, not a caller's: one browser tab leaving must not cancel a fetch others wait on, but Ctrl-C must stop gh. `list`/`export`/`groups suggest` fetch directly under the command context via `snapshotFor`.
 - The cache file is keyed by repo, author and a hash of the gh command + env, because `@me` is a different user per gh setup. Cached snapshots are regrouped with the current config on load.
 - Test fixtures are synthetic. Never commit real PR data from other repos.
-- No GitHub workflows. Verify locally: `go vet ./... && go test ./...`.
+- No GitHub workflows. Verify locally with `make check` (gofmt, vet, race tests) before every commit. Releases are Makefile targets (`release-dry`, `release`); see the README's Releasing section. Keep release logic in the Makefile, not in separate scripts.
 
 ## Developing in this repo
 
-The maintainer has two GitHub accounts. For `gh` and `git` in this repo use the personal one: prefix `gh` with `GH_CONFIG_DIR=$HOME/.config/gh-personal` (the `with-gh-personal` alias in an interactive shell). The `origin` remote uses the `personal.github.com` SSH host alias; plain `github.com` authenticates as the work account.
+The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote uses the `personal.github.com` SSH host alias; plain `github.com` authenticates as the work account.
