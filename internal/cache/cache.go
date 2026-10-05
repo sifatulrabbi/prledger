@@ -3,6 +3,8 @@
 package cache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
 )
@@ -22,8 +25,10 @@ type File struct {
 var unsafeChars = regexp.MustCompile(`[^A-Za-z0-9@._-]`)
 
 // For returns the cache file for repo and author under
-// $XDG_CACHE_HOME/prledger, else ~/.cache/prledger.
-func For(getenv func(string) string, repo core.Repo, author string) (File, error) {
+// $XDG_CACHE_HOME/prledger, else ~/.cache/prledger. account is how gh is
+// started (command and environment); "@me" means a different user for each
+// gh setup, so each setup gets its own file.
+func For(getenv func(string) string, repo core.Repo, author string, account []string) (File, error) {
 	base := getenv("XDG_CACHE_HOME")
 	if base == "" {
 		home := getenv("HOME")
@@ -32,7 +37,8 @@ func For(getenv func(string) string, repo core.Repo, author string) (File, error
 		}
 		base = filepath.Join(home, ".cache")
 	}
-	name := unsafeChars.ReplaceAllString(author, "_")
+	sum := sha256.Sum256([]byte(strings.Join(account, "\x00")))
+	name := unsafeChars.ReplaceAllString(author, "_") + "-" + hex.EncodeToString(sum[:4])
 	parts := []string{base, "prledger", unsafeChars.ReplaceAllString(repo.Owner, "_"), unsafeChars.ReplaceAllString(repo.Name, "_"), name + ".json"}
 	return File{Path: filepath.Join(parts...)}, nil
 }
@@ -57,8 +63,9 @@ func (f File) Load() (core.Snapshot, bool, error) {
 	return snap, true, nil
 }
 
-// Save writes the snapshot atomically: to a temp file, then renamed over the
-// cache, so a crash never leaves half a file behind.
+// Save writes the snapshot to a temp file, syncs it and renames it over the
+// cache, so readers see the old file or the new one, never a partial write.
+// Losing the cache is harmless: the next fetch rebuilds it.
 func (f File) Save(snap core.Snapshot) error {
 	data, err := json.Marshal(snap)
 	if err != nil {
@@ -74,6 +81,10 @@ func (f File) Save(snap core.Snapshot) error {
 	}
 	defer os.Remove(tmp.Name()) // no-op after a successful rename
 	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		return err
 	}

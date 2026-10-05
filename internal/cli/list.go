@@ -22,12 +22,7 @@ func newListCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var snap core.Snapshot
-			if cached {
-				snap, err = loadCached(t, d)
-			} else {
-				snap, err = fetchFresh(cmd, t, d)
-			}
+			snap, err := snapshotFor(cmd, t, d, cached)
 			if err != nil {
 				return err
 			}
@@ -40,37 +35,6 @@ func newListCmd(d Deps, g *globalFlags) *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the snapshot as JSON")
 	cmd.Flags().BoolVar(&cached, "cached", false, "show the last fetched snapshot without calling gh")
 	return cmd
-}
-
-func loadCached(t target, d Deps) (core.Snapshot, error) {
-	c, err := t.cache(d)
-	if err != nil {
-		return core.Snapshot{}, err
-	}
-	snap, ok, err := c.Load()
-	if err != nil {
-		return core.Snapshot{}, err
-	}
-	if !ok {
-		return core.Snapshot{}, fmt.Errorf("no cached snapshot for %s yet; run prledger list without --cached first", t.repo)
-	}
-	return snap, nil
-}
-
-// fetchFresh fetches through gh and updates the cache.
-func fetchFresh(cmd *cobra.Command, t target, d Deps) (core.Snapshot, error) {
-	tr, err := t.tracker(d)
-	if err != nil {
-		return core.Snapshot{}, err
-	}
-	snap, err := tr.Refresh(cmd.Context())
-	if err != nil {
-		return core.Snapshot{}, err
-	}
-	if cerr := tr.CacheError(); cerr != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: cache: %v\n", cerr)
-	}
-	return snap, nil
 }
 
 func writeJSON(w io.Writer, snap core.Snapshot) error {

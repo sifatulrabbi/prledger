@@ -26,12 +26,7 @@ func newGroupsCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var snap core.Snapshot
-			if cached {
-				snap, err = loadCached(t, d)
-			} else {
-				snap, err = fetchFresh(cmd, t, d)
-			}
+			snap, err := snapshotFor(cmd, t, d, cached)
 			if err != nil {
 				return err
 			}

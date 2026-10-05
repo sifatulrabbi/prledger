@@ -74,26 +74,42 @@ func TestSaveLeavesNoTempFiles(t *testing.T) {
 	}
 }
 
-func TestForPicksAPerRepoAndAuthorFile(t *testing.T) {
+func TestForPicksAPerRepoAuthorAndAccountFile(t *testing.T) {
+	gh := []string{"gh"}
 	cases := []struct {
 		name   string
 		vars   map[string]string
 		author string
 		want   string
 	}{
-		{"XDG_CACHE_HOME", map[string]string{"XDG_CACHE_HOME": "/xdg", "HOME": "/home/alice"}, "@me", "/xdg/prledger/octo/hello-world/@me.json"},
-		{"~/.cache", map[string]string{"HOME": "/home/alice"}, "bob", "/home/alice/.cache/prledger/octo/hello-world/bob.json"},
-		{"unsafe author characters", map[string]string{"HOME": "/home/alice"}, "../../etc", "/home/alice/.cache/prledger/octo/hello-world/.._.._etc.json"},
+		{"XDG_CACHE_HOME", map[string]string{"XDG_CACHE_HOME": "/xdg", "HOME": "/home/alice"}, "@me", "/xdg/prledger/octo/hello-world/@me-"},
+		{"~/.cache", map[string]string{"HOME": "/home/alice"}, "bob", "/home/alice/.cache/prledger/octo/hello-world/bob-"},
+		{"unsafe author characters", map[string]string{"HOME": "/home/alice"}, "../../etc", "/home/alice/.cache/prledger/octo/hello-world/.._.._etc-"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			f, err := For(func(k string) string { return c.vars[k] }, repo, c.author)
+			f, err := For(func(k string) string { return c.vars[k] }, repo, c.author, gh)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if f.Path != c.want {
-				t.Fatalf("Path = %q, want %q", f.Path, c.want)
+			if !strings.HasPrefix(f.Path, c.want) || !strings.HasSuffix(f.Path, ".json") {
+				t.Fatalf("Path = %q, want %q<account>.json", f.Path, c.want)
 			}
 		})
+	}
+}
+
+// Different gh setups (another GH_CONFIG_DIR) are different accounts and must
+// not share a cache file; the same setup always maps to the same file.
+func TestForSeparatesGhAccounts(t *testing.T) {
+	env := func(k string) string { return map[string]string{"HOME": "/home/alice"}[k] }
+	work, _ := For(env, repo, "@me", []string{"gh"})
+	again, _ := For(env, repo, "@me", []string{"gh"})
+	personal, _ := For(env, repo, "@me", []string{"gh", "GH_CONFIG_DIR=/home/alice/.config/gh-personal"})
+	if work.Path != again.Path {
+		t.Fatalf("same account, different files: %q vs %q", work.Path, again.Path)
+	}
+	if work.Path == personal.Path {
+		t.Fatalf("different accounts share %q", work.Path)
 	}
 }

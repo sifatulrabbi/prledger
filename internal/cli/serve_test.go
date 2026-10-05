@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
+	"github.com/sifatulrabbi/prledger/internal/server"
 )
 
 // syncBuffer is a bytes.Buffer safe to read while serve writes to it.
@@ -119,6 +121,29 @@ func TestServeNoOpenLeavesTheBrowserAlone(t *testing.T) {
 	if got := opened(); len(got) != 0 {
 		t.Fatalf("opened = %q, want nothing", got)
 	}
+}
+
+// Regression: Ctrl-C while the page waited on a slow refresh made serve exit
+// with "context deadline exceeded" after the 5s shutdown timeout.
+func TestCtrlCDuringASlowRefreshExitsCleanly(t *testing.T) {
+	h := newHarness(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) }) // runs after serve has stopped
+	h.gh.respond = func(argv []string) ([]byte, error) {
+		<-release // gh hangs until the test ends
+		return nil, errors.New("gh: released")
+	}
+	url, _ := startServe(t, h, "--no-open")
+
+	go func() {
+		req, _ := http.NewRequest("POST", url+"api/refresh", nil)
+		req.Header.Set(server.RequestHeader, "1")
+		if res, err := http.DefaultClient.Do(req); err == nil {
+			res.Body.Close()
+		}
+	}()
+	time.Sleep(50 * time.Millisecond) // let the refresh request reach the server
+	// startServe's cleanup now presses Ctrl-C and requires a nil error within 5s.
 }
 
 func TestServeFailsFastOnBadConfig(t *testing.T) {

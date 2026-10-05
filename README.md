@@ -100,7 +100,7 @@ To log that account in once: `GH_CONFIG_DIR=~/.config/gh-personal gh auth login`
 
 ## The browser page
 
-`prledger serve` listens on `127.0.0.1` only and answers only requests addressed to localhost. The page shows the last fetched data right away and refreshes it in the background when it is more than a minute old. Use the **Refresh** button for the latest status. If a refresh fails (for example `gh` is logged out), the page keeps the data it has and shows the error.
+`prledger serve` listens on `127.0.0.1` only and answers only requests addressed to localhost. The page shows the last fetched data right away, then asks `gh` for the current status; use the **Refresh** button to ask again later. If a refresh fails (for example `gh` is logged out), the page keeps the data it has and shows the error.
 
 Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), one file per repo and author. Deleting it is safe.
 

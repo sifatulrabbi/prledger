@@ -59,6 +59,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// pagePolicy allows the page's own inline script and style and same-origin
+// API calls, and nothing else: no external scripts, frames or form posts.
+const pagePolicy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
 // loopbackOnly refuses requests whose Host is not a loopback name. The server
 // only listens on loopback, but a page on another site could still reach it
 // through a hostname that resolves to 127.0.0.1 (DNS rebinding); such
@@ -70,9 +74,12 @@ func loopbackOnly(next http.Handler) http.Handler {
 			host = r.Host
 		}
 		if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
-			http.Error(w, "prledger only answers on localhost", http.StatusForbidden)
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "prledger only answers on localhost"})
 			return
 		}
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Content-Security-Policy", pagePolicy)
 		next.ServeHTTP(w, r)
 	})
 }

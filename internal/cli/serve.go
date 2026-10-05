@@ -28,7 +28,8 @@ func newServeCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			tr, err := t.tracker(d)
+			ctx := cmd.Context()
+			tr, err := t.tracker(ctx, d) // Ctrl-C cancels its fetches too
 			if err != nil {
 				return err
 			}
@@ -39,14 +40,15 @@ func newServeCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("starting the server: %w", err)
 			}
-			// Start fetching now; the page shows the cached snapshot meanwhile
-			// and its first refresh joins this fetch.
-			go tr.Refresh(context.Background())
+			go tr.Refresh(ctx) // warm up while the browser opens
 
 			url := fmt.Sprintf("http://%s/", ln.Addr())
 			srv := &http.Server{
 				Handler:           server.New(tr, web.Page()),
 				ReadHeaderTimeout: 10 * time.Second,
+				// Requests end with Ctrl-C, so a refresh waiting on gh does
+				// not hold up shutdown.
+				BaseContext: func(net.Listener) context.Context { return ctx },
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Serving %s at %s (Ctrl-C to stop)\n", t.repo, url)
 			if !noOpen {
@@ -74,7 +76,7 @@ func serveUntilDone(ctx context.Context, srv *http.Server, ln net.Listener) erro
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdown); err != nil {
-		return err
+		srv.Close() // a request still open after the grace period is cut off
 	}
 	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
 		return err

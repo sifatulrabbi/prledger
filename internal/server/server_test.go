@@ -56,6 +56,37 @@ func TestRefreshNeedsThePrledgerHeader(t *testing.T) {
 	}
 }
 
+// The CORS preflight a cross-site fetch with X-Prledger would need is never
+// granted: no Access-Control-Allow-* headers come back.
+func TestPreflightIsNotGranted(t *testing.T) {
+	req := httptest.NewRequest("OPTIONS", "/api/refresh", nil)
+	req.Host = "127.0.0.1:4321"
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", RequestHeader)
+	rec := httptest.NewRecorder()
+	New(fakeSnapshots{snap: sample}, []byte(page)).ServeHTTP(rec, req)
+	for name := range rec.Header() {
+		if strings.HasPrefix(name, "Access-Control-") {
+			t.Fatalf("preflight answered with %s", name)
+		}
+	}
+}
+
+// The page only needs its own inline script and same-origin fetches.
+func TestPageIsServedWithALockedDownPolicy(t *testing.T) {
+	res := do(t, New(fakeSnapshots{snap: sample}, []byte(page)), "GET", "/")
+	csp := res.Header.Get("Content-Security-Policy")
+	for _, want := range []string{"default-src 'none'", "connect-src 'self'", "frame-ancestors 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP %q lacks %q", csp, want)
+		}
+	}
+	if res.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing X-Content-Type-Options: nosniff")
+	}
+}
+
 // Refresh runs gh, so it must not be triggerable by a plain GET (a link or
 // an <img> on another page).
 func TestRefreshNeedsPOST(t *testing.T) {

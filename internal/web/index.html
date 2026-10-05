@@ -191,8 +191,11 @@ $("q").addEventListener("input", render);
 
 async function call(method, path) {
   const res = await fetch(path, { method, cache: "no-store", headers: { "X-Prledger": "1" } });
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || res.statusText);
+  const text = await res.text();
+  let body = null;
+  try { body = JSON.parse(text); } catch { /* not JSON, e.g. a proxy error page */ }
+  if (!res.ok) throw new Error((body && body.error) || text.trim() || res.statusText);
+  if (body === null) throw new Error("the server sent something that is not JSON");
   return body;
 }
 
@@ -212,8 +215,6 @@ async function refresh() {
   }
 }
 
-const STALE_MS = 60 * 1000;
-
 async function load() {
   const embedded = $("prledger-data").textContent.trim();
   if (embedded) { setSnapshot(JSON.parse(embedded)); return; }
@@ -226,8 +227,9 @@ async function load() {
     notice("Could not load pull requests: " + err.message);
     return;
   }
-  // A snapshot from the cache may be old; the server is already fetching.
-  if (Date.now() - new Date(snap.fetchedAt).getTime() > STALE_MS) refresh();
+  // What loaded may be the cache; always follow with live status. This joins
+  // the fetch serve started, and shows its error if it failed.
+  refresh();
 }
 load();
 </script>

@@ -58,7 +58,7 @@ func (c *counter) fetch(ctx context.Context) (core.Snapshot, error) {
 
 func TestCurrentFetchesWhenNothingIsKnown(t *testing.T) {
 	c := &counter{}
-	tr := core.NewTracker(c.fetch, &memCache{})
+	tr := core.NewTracker(context.Background(), c.fetch, &memCache{})
 	snap, err := tr.Current(context.Background())
 	if err != nil || snap.Repo != "octo/hello-world" || c.calls.Load() != 1 {
 		t.Fatalf("snap=%+v err=%v calls=%d", snap, err, c.calls.Load())
@@ -71,7 +71,7 @@ func TestCurrentFetchesWhenNothingIsKnown(t *testing.T) {
 func TestCurrentStartsFromTheCache(t *testing.T) {
 	cached := core.Snapshot{Repo: "octo/hello-world", FetchedAt: now}
 	c := &counter{}
-	tr := core.NewTracker(c.fetch, &memCache{snap: &cached})
+	tr := core.NewTracker(context.Background(), c.fetch, &memCache{snap: &cached})
 	snap, err := tr.Current(context.Background())
 	if err != nil || !snap.FetchedAt.Equal(now) || c.calls.Load() != 0 {
 		t.Fatalf("snap=%+v err=%v calls=%d, want the cached snapshot without fetching", snap, err, c.calls.Load())
@@ -80,7 +80,7 @@ func TestCurrentStartsFromTheCache(t *testing.T) {
 
 func TestCorruptCacheIsReportedButNotFatal(t *testing.T) {
 	c := &counter{}
-	tr := core.NewTracker(c.fetch, &memCache{err: errors.New("bad json")})
+	tr := core.NewTracker(context.Background(), c.fetch, &memCache{err: errors.New("bad json")})
 	if err := tr.CacheError(); err == nil {
 		t.Fatal("CacheError() = nil, want the load error")
 	}
@@ -91,7 +91,7 @@ func TestCorruptCacheIsReportedButNotFatal(t *testing.T) {
 
 func TestRefreshSavesToTheCache(t *testing.T) {
 	cache := &memCache{}
-	tr := core.NewTracker((&counter{}).fetch, cache)
+	tr := core.NewTracker(context.Background(), (&counter{}).fetch, cache)
 	if _, err := tr.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestRefreshSavesToTheCache(t *testing.T) {
 
 func TestConcurrentRefreshesShareOneFetch(t *testing.T) {
 	c := &counter{gate: make(chan struct{})}
-	tr := core.NewTracker(c.fetch, &memCache{})
+	tr := core.NewTracker(context.Background(), c.fetch, &memCache{})
 	var wg sync.WaitGroup
 	results := make([]core.Snapshot, 5)
 	for i := range results {
@@ -133,7 +133,7 @@ func TestConcurrentRefreshesShareOneFetch(t *testing.T) {
 
 func TestFailedRefreshKeepsTheLastGoodSnapshot(t *testing.T) {
 	c := &counter{}
-	tr := core.NewTracker(c.fetch, &memCache{})
+	tr := core.NewTracker(context.Background(), c.fetch, &memCache{})
 	good, err := tr.Refresh(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -148,11 +148,35 @@ func TestFailedRefreshKeepsTheLastGoodSnapshot(t *testing.T) {
 	}
 }
 
+// The tracker's own context (serve's lifetime) does cancel a running fetch,
+// so Ctrl-C stops gh.
+func TestCancellingTheTrackerContextStopsTheFetch(t *testing.T) {
+	life, stop := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	tr := core.NewTracker(life, func(ctx context.Context) (core.Snapshot, error) {
+		close(started)
+		<-ctx.Done()
+		return core.Snapshot{}, ctx.Err()
+	}, &memCache{})
+	errc := make(chan error, 1)
+	go func() { _, err := tr.Refresh(context.Background()); errc <- err }()
+	<-started
+	stop()
+	select {
+	case err := <-errc:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("fetch kept running after the tracker context was cancelled")
+	}
+}
+
 // A fetch must not be cancelled because the first caller went away: the
 // others are still waiting for it.
 func TestRefreshOutlivesTheCallerThatStartedIt(t *testing.T) {
 	c := &counter{gate: make(chan struct{})}
-	tr := core.NewTracker(func(ctx context.Context) (core.Snapshot, error) {
+	tr := core.NewTracker(context.Background(), func(ctx context.Context) (core.Snapshot, error) {
 		s, err := c.fetch(ctx)
 		if ctx.Err() != nil {
 			return core.Snapshot{}, ctx.Err()

@@ -21,8 +21,8 @@ const emptyDataTag = `<script id="prledger-data" type="application/json"></scrip
 func Page() []byte { return page }
 
 // Export returns the page with snap embedded, for viewing without a server.
-// encoding/json escapes <, > and & as <, > and &, so no text in
-// the snapshot can close the script tag.
+// encoding/json writes <, > and & as Unicode escapes (backslash-u003c and so
+// on), so no text in the snapshot can close the script tag.
 func Export(snap core.Snapshot) ([]byte, error) {
 	if bytes.Count(page, []byte(emptyDataTag)) != 1 {
 		return nil, errors.New("page template has lost its data tag")

@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"sync"
-	"time"
 )
 
 // SnapshotCache stores the last snapshot of one repo between runs.
@@ -13,14 +12,11 @@ type SnapshotCache interface {
 	Save(Snapshot) error
 }
 
-// fetchTimeout bounds one shared fetch, which runs detached from the callers
-// waiting on it.
-const fetchTimeout = 2 * time.Minute
-
 // Tracker keeps the latest good snapshot of one repo. It starts from the
 // cache, refreshes on demand, and shares one fetch between concurrent
 // refreshes.
 type Tracker struct {
+	life  context.Context // fetches run under this, not under any one caller
 	fetch func(context.Context) (Snapshot, error)
 	cache SnapshotCache
 
@@ -36,10 +32,11 @@ type flight struct {
 	err  error
 }
 
-// NewTracker loads the cache and returns a Tracker. A cache that fails to load
-// is not fatal; CacheError reports it.
-func NewTracker(fetch func(context.Context) (Snapshot, error), cache SnapshotCache) *Tracker {
-	t := &Tracker{fetch: fetch, cache: cache}
+// NewTracker loads the cache and returns a Tracker. Fetches run under life, so
+// cancelling it stops them. A cache that fails to load is not fatal;
+// CacheError reports it.
+func NewTracker(life context.Context, fetch func(context.Context) (Snapshot, error), cache SnapshotCache) *Tracker {
+	t := &Tracker{life: life, fetch: fetch, cache: cache}
 	snap, ok, err := cache.Load()
 	switch {
 	case err != nil:
@@ -88,10 +85,9 @@ func (t *Tracker) Refresh(ctx context.Context) (Snapshot, error) {
 }
 
 func (t *Tracker) run(f *flight) {
-	// Detached from any caller: one leaving must not cancel the others' fetch.
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-	defer cancel()
-	snap, err := t.fetch(ctx)
+	// Under the tracker's life, not a caller's: one caller leaving must not
+	// cancel the fetch the others are waiting on.
+	snap, err := t.fetch(t.life)
 	var saveErr error
 	if err == nil {
 		saveErr = t.cache.Save(snap)

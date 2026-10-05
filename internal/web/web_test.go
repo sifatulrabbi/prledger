@@ -38,6 +38,14 @@ func TestHiddenAttributeAlwaysHides(t *testing.T) {
 	}
 }
 
+// Card links come from snapshot data, which an exported file lets anyone
+// edit; the page must only link https URLs, never javascript: ones.
+func TestCardLinksAreHTTPSOnly(t *testing.T) {
+	if !strings.Contains(string(Page()), `a.href = /^https:\/\//.test(p.url) ? p.url : "#";`) {
+		t.Fatal("card links no longer check for https")
+	}
+}
+
 func TestExportEmbedsTheSnapshot(t *testing.T) {
 	out, err := Export(snapshotTitled("Add search"))
 	if err != nil {

@@ -141,22 +141,49 @@ func (t target) query() core.Query {
 // regrouped with the current config, which may have changed since they were
 // saved.
 func (t target) cache(d Deps) (regroupedCache, error) {
-	file, err := cache.For(d.Getenv, t.repo, t.settings.Author)
+	account := append(envPairs(t.settings.Env), t.settings.Command...)
+	file, err := cache.For(d.Getenv, t.repo, t.settings.Author, account)
 	if err != nil {
 		return regroupedCache{}, err
 	}
 	return regroupedCache{File: file, ledger: t.ledger(d)}, nil
 }
 
-// tracker fetches through gh and keeps the cache up to date.
-func (t target) tracker(d Deps) (*core.Tracker, error) {
+// tracker fetches through gh and keeps the cache up to date until life ends.
+func (t target) tracker(life context.Context, d Deps) (*core.Tracker, error) {
 	c, err := t.cache(d)
 	if err != nil {
 		return nil, err
 	}
-	l := t.ledger(d)
-	fetch := func(ctx context.Context) (core.Snapshot, error) { return l.Snapshot(ctx, t.query()) }
-	return core.NewTracker(fetch, c), nil
+	fetch := func(ctx context.Context) (core.Snapshot, error) { return c.ledger.Snapshot(ctx, t.query()) }
+	return core.NewTracker(life, fetch, c), nil
+}
+
+// snapshotFor returns the cached snapshot, or fetches a fresh one through gh
+// and saves it to the cache.
+func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapshot, error) {
+	c, err := t.cache(d)
+	if err != nil {
+		return core.Snapshot{}, err
+	}
+	if cached {
+		snap, ok, err := c.Load()
+		if err != nil {
+			return core.Snapshot{}, fmt.Errorf("%w (run without --cached to rebuild it)", err)
+		}
+		if !ok {
+			return core.Snapshot{}, fmt.Errorf("no cached snapshot for %s yet; run without --cached first", t.repo)
+		}
+		return snap, nil
+	}
+	snap, err := c.ledger.Snapshot(cmd.Context(), t.query())
+	if err != nil {
+		return core.Snapshot{}, err
+	}
+	if err := c.Save(snap); err != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not update the cache: %v\n", err)
+	}
+	return snap, nil
 }
 
 type regroupedCache struct {

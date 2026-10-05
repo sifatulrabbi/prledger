@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/web"
 )
 
@@ -26,12 +25,7 @@ func newExportCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var snap core.Snapshot
-			if cached {
-				snap, err = loadCached(t, d)
-			} else {
-				snap, err = fetchFresh(cmd, t, d)
-			}
+			snap, err := snapshotFor(cmd, t, d, cached)
 			if err != nil {
 				return err
 			}
@@ -39,13 +33,14 @@ func newExportCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if out == "" {
-				out = fmt.Sprintf("prledger-%s-%s.html", t.repo.Owner, t.repo.Name)
+			path := out
+			if path == "" {
+				path = fmt.Sprintf("prledger-%s-%s.html", t.repo.Owner, t.repo.Name)
 			}
-			if err := os.WriteFile(out, page, 0o644); err != nil {
+			if err := os.WriteFile(path, page, 0o644); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", out)
+			fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", path)
 			return nil
 		},
 	}

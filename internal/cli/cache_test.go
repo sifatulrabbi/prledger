@@ -13,8 +13,38 @@ import (
 	"github.com/sifatulrabbi/prledger/internal/server"
 )
 
-func cachePath(h *harness) string {
-	return filepath.Join(h.env["XDG_CACHE_HOME"], "prledger", "octo", "hello-world", "@me.json")
+// cachePath is the cache file of the harness's default gh setup.
+func cachePath(t *testing.T, h *harness) string {
+	t.Helper()
+	matches, _ := filepath.Glob(filepath.Join(h.env["XDG_CACHE_HOME"], "prledger", "octo", "hello-world", "@me-*.json"))
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	// Not written yet: write one to learn the name, then remove it.
+	if err := h.run("list"); err != nil {
+		t.Fatal(err)
+	}
+	h.stdout.Reset()
+	matches, _ = filepath.Glob(filepath.Join(h.env["XDG_CACHE_HOME"], "prledger", "octo", "hello-world", "@me-*.json"))
+	if len(matches) != 1 {
+		t.Fatalf("cache files = %v, want one", matches)
+	}
+	os.Remove(matches[0])
+	return matches[0]
+}
+
+// Regression: the cache was keyed by "@me" only, so after pointing gh at
+// another account (gh_env / gh_command) the cached data was the old
+// account's PRs.
+func TestCacheIsSeparatePerGhAccount(t *testing.T) {
+	h := newHarness(t)
+	if err := h.run("list"); err != nil {
+		t.Fatal(err)
+	}
+	h.writeConfig(t, "repos:\n  octo/hello-world:\n    gh_env: {GH_CONFIG_DIR: /home/alice/.config/gh-personal}\n")
+	if err := h.run("list", "--cached"); err == nil || !strings.Contains(err.Error(), "no cached snapshot") {
+		t.Fatalf("err = %v, want no cache for the other account", err)
+	}
 }
 
 func TestListCachedWorksWithoutGh(t *testing.T) {
@@ -94,7 +124,7 @@ func TestServeStartsFromTheCacheAndReportsRefreshFailures(t *testing.T) {
 
 func TestServeWarnsAboutACorruptCache(t *testing.T) {
 	h := newHarness(t)
-	path := cachePath(h)
+	path := cachePath(t, h)
 	os.MkdirAll(filepath.Dir(path), 0o755)
 	os.WriteFile(path, []byte("{broken"), 0o644)
 	errOut := &syncBuffer{}
