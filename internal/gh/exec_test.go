@@ -68,7 +68,7 @@ func TestExecRunnerReportsStderrOnFailure(t *testing.T) {
 }
 
 func TestExecRunnerExplainsMissingProgram(t *testing.T) {
-	_, err := ExecRunner{}.Run(context.Background(), []string{"with-gh-personal", "gh"}, nil)
+	_, err := ExecRunner{}.Run(context.Background(), []string{"my-gh-alias", "gh"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "aliases") {
 		t.Fatalf("err = %v, want a hint that shell aliases do not work", err)
 	}
