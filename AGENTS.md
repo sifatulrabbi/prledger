@@ -20,4 +20,4 @@ Go 1.27 CLI (cobra) that lists the current `gh` user's PRs in the current repo, 
 
 ## Developing in this repo
 
-The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias for `GH_CONFIG_DIR=$HOME/.config/gh-personal`, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote uses the `personal.github.com` SSH host alias; plain `github.com` authenticates as the work account.
+The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias for `GH_CONFIG_DIR=$HOME/.config/gh-personal`, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote is HTTPS and git gets its credentials from gh (`gh auth git-credential`), so the prefix also picks the account `git push` uses.
