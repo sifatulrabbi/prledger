@@ -3,7 +3,10 @@ package cli
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +95,68 @@ func TestUnreadableWorktreesWarnAndCarryOn(t *testing.T) {
 	}
 	if !strings.Contains(h.stderr.String(), "permission denied") || !strings.Contains(h.stdout.String(), "Ungrouped (4)") {
 		t.Fatalf("stderr %q\nstdout %s", h.stderr.String(), h.stdout.String())
+	}
+}
+
+// Regression: doctor counted this folder's worktrees for `--repo` of another
+// repo, unlike list.
+func TestDoctorIgnoresWorktreesForAnotherRepo(t *testing.T) {
+	h := newHarness(t)
+	h.gh.respond = healthyGh
+	h.worktrees = []core.Worktree{featureWorktree()}
+	h.deps.Stdout = &h.stdout
+	if err := h.run("doctor", "--repo", "someone/else"); err != nil {
+		t.Fatalf("err = %v\n%s", err, h.stdout.String())
+	}
+	if !strings.Contains(h.stdout.String(), "worktrees not used: this folder is not a checkout of someone/else") {
+		t.Fatalf("output:\n%s", h.stdout.String())
+	}
+}
+
+// The snapshot names the worktree field; the page reads it.
+func TestListJSONCarriesTheWorktreePath(t *testing.T) {
+	h := newHarness(t)
+	h.worktrees = []core.Worktree{featureWorktree()}
+	if err := h.run("list", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "list-worktree.golden.json", h.stdout.Bytes())
+}
+
+// Paths under the home folder are shown as ~/…, and an exported page, which
+// is meant to be shared, carries no local paths at all.
+func TestWorktreePathsAreShortenedAndLeftOutOfExports(t *testing.T) {
+	h := newHarness(t)
+	w := featureWorktree()
+	w.Path = "/home/alice/.herdr/worktrees/x"
+	h.worktrees = []core.Worktree{w}
+	if err := h.run("list", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	if out := h.stdout.String(); !strings.Contains(out, `"worktree": "~/.herdr/worktrees/x"`) {
+		t.Fatalf("list --json =\n%s\nwant the path shortened to ~/", out)
+	}
+	out := filepath.Join(t.TempDir(), "page.html")
+	if err := h.run("export", "html", "-o", out); err != nil {
+		t.Fatal(err)
+	}
+	page, _ := os.ReadFile(out)
+	if strings.Contains(string(page), ".herdr") || !strings.Contains(string(page), "alice-login-and-search") {
+		t.Fatal("export should keep the worktree group but not its path")
+	}
+}
+
+// Under serve every refresh rebuilds the ledger; a broken worktree setup
+// must not print the same warning each time.
+func TestTheWorktreeWarningPrintsOnce(t *testing.T) {
+	h := newHarness(t)
+	h.worktreeErr = errors.New("boom")
+	tgt := target{repo: core.Repo{Owner: "octo", Name: "hello-world"}, local: true, warned: new(sync.Once)}
+	tgt.settings.WorktreeGroups = true
+	tgt.worktrees(context.Background(), h.deps)
+	tgt.worktrees(context.Background(), h.deps)
+	if n := strings.Count(h.stderr.String(), "boom"); n != 1 {
+		t.Fatalf("warning printed %d times, want once:\n%s", n, h.stderr.String())
 	}
 }
 

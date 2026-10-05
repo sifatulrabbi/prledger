@@ -1,7 +1,10 @@
 package core_test
 
 import (
+	"math/rand/v2"
+	"reflect"
 	"regexp"
+	"slices"
 	"testing"
 	"time"
 
@@ -118,8 +121,112 @@ func TestWorktreesDoNotPullInLinkedPRsWhenAutomaticGroupingIsOff(t *testing.T) {
 	assertLayout(t, snap, layout{{"translation", []int{2}}, {core.UngroupedName, []int{1}}})
 }
 
+// Regression: PRs joined a worktree one at a time, so the result depended on
+// the order PRs arrived in, and `list` and `list --cached` (which flattens
+// groups) disagreed on the same data.
+func TestWorktreeLinkingDoesNotDependOnPROrder(t *testing.T) {
+	g := core.Grouping{Auto: true, Worktrees: []core.Worktree{
+		worktree("w0", "a/abc-11-x", nil),
+		worktree("w1", "b/xyz-33-y", nil),
+	}}
+	prs := []core.PR{
+		pr(1, "a/abc-11-x", "w0's"),
+		pr(2, "b/xyz-33-y", "w1's"),
+		pr(3, "d/q-feature", "q (QQQ-22) (XYZ-33)"),
+		pr(4, "c/abc-11-p", "p (QQQ-22)"),
+		pr(5, "d/q-feature-split/a", "slice"),
+	}
+	want := layoutOf(snapshotOf(t, g, prs...))
+	for seed := range uint64(50) {
+		shuffled := slices.Clone(prs)
+		rand.New(rand.NewPCG(seed, 7)).Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		if got := layoutOf(snapshotOf(t, g, shuffled...)); !reflect.DeepEqual(got, want) {
+			t.Fatalf("order %v gives\n%v\nwant\n%v", numbers(shuffled), got, want)
+		}
+	}
+}
+
+// #3, #4 and #5 are linked to each other and, through them, to both w0 and
+// w1: an ambiguous set stays with automatic grouping, whole.
+func TestALinkedSetTouchingTwoWorktreesStaysTogether(t *testing.T) {
+	g := core.Grouping{Auto: true, Worktrees: []core.Worktree{
+		worktree("w0", "a/abc-11-x", nil),
+		worktree("w1", "b/xyz-33-y", nil),
+	}}
+	snap := snapshotOf(t, g,
+		pr(1, "a/abc-11-x", "w0's"),
+		pr(2, "b/xyz-33-y", "w1's"),
+		pr(3, "d/q-feature", "q (QQQ-22) (XYZ-33)"),
+		pr(4, "c/abc-11-p", "p (QQQ-22)"),
+		pr(5, "d/q-feature-split/a", "slice"),
+	)
+	assertLayout(t, snap, layout{
+		{"ABC-11 +2 · q (QQQ-22) (XYZ-33)", []int{5, 4, 3}},
+		{"w1", []int{2}},
+		{"w0", []int{1}},
+	})
+}
+
+// Regression: the SEQ-28 worktree's branch had no PR of its own, so it
+// pulled in nothing; its branch names are links too.
+func TestAWorktreeBranchWithoutAPRStillPullsInLinkedPRs(t *testing.T) {
+	g := core.Grouping{Auto: true, Worktrees: []core.Worktree{worktree("persona", "a/abc-28-authz", nil)}}
+	snap := snapshotOf(t, g, pr(1, "a/abc-28-server-auth", "server auth"))
+	assertLayout(t, snap, layout{{"persona", []int{1}}})
+}
+
+func TestEqualCheckoutTimesGoToTheEarlierWorktree(t *testing.T) {
+	g := core.Grouping{Worktrees: []core.Worktree{
+		worktree("first", "", map[string]int{"shared": 3}),
+		worktree("second", "", map[string]int{"shared": 3}),
+	}}
+	assertLayout(t, snapshotOf(t, g, pr(1, "shared", "x")), layout{{"first", []int{1}}})
+}
+
+// Group names are what people read; two groups never share one, and
+// "Ungrouped" always means ungrouped.
+func TestGroupNamesStayUnique(t *testing.T) {
+	g := core.Grouping{
+		Rules: []core.GroupRule{{Name: "feat", PRs: []int{1}}},
+		Worktrees: []core.Worktree{
+			worktree("feat", "b", nil),
+			{Name: "feat", Path: "/other/feat", Current: "c"},
+			worktree(core.UngroupedName, "d", nil),
+		},
+	}
+	snap := snapshotOf(t, g, pr(1, "a", "1"), pr(2, "b", "2"), pr(3, "c", "3"), pr(4, "d", "4"), pr(5, "e", "5"))
+	seen := map[string]bool{}
+	for _, grp := range snap.Groups {
+		if seen[grp.Name] {
+			t.Fatalf("duplicate group name %q in %v", grp.Name, layoutOf(snap))
+		}
+		seen[grp.Name] = true
+		if grp.Name == core.UngroupedName && !equalInts(numbers(grp.PRs), []int{5}) {
+			t.Fatalf("Ungrouped holds %v, want only #5", numbers(grp.PRs))
+		}
+	}
+}
+
+// Regression: suggest pulled linked PRs into worktrees even with automatic
+// grouping off, so a PR shown in Ungrouped was neither suggested nor listed.
+func TestSuggestMatchesListWhenAutomaticGroupingIsOff(t *testing.T) {
+	g := core.Grouping{Auto: false, Worktrees: []core.Worktree{worktree("mine", "a/abc-11-x", nil)}}
+	_, alone := g.Suggest([]core.PR{pr(1, "a/abc-11-x", "in the worktree"), pr(2, "a/abc-11-y", "linked, but auto is off")})
+	if len(alone) != 1 || alone[0].Number != 2 {
+		t.Fatalf("alone = %+v, want #2 listed as not linked", alone)
+	}
+}
+
+func numbers(prs []core.PR) []int {
+	var out []int
+	for _, p := range prs {
+		out = append(out, p.Number)
+	}
+	return out
+}
+
 func TestSuggestLeavesWorktreePRsOut(t *testing.T) {
-	g := core.Grouping{Worktrees: []core.Worktree{worktree("mine", "a/abc-11-x", nil)}}
+	g := core.Grouping{Auto: true, Worktrees: []core.Worktree{worktree("mine", "a/abc-11-x", nil)}}
 	groups, alone := g.Suggest([]core.PR{
 		pr(1, "a/abc-11-x", "in the worktree"),
 		pr(2, "a/abc-11-y", "linked to the worktree"),

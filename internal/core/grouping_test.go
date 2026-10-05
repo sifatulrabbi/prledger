@@ -3,7 +3,9 @@ package core_test
 import (
 	"context"
 	"math/rand/v2"
+	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -268,6 +270,11 @@ func TestEveryPRLandsInExactlyOneGroup(t *testing.T) {
 		}
 
 		snap := snapshotOf(t, g, prs...)
+		shuffled := slices.Clone(prs)
+		r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		if a, b := layoutOf(snap), layoutOf(snapshotOf(t, g, shuffled...)); !reflect.DeepEqual(a, b) {
+			t.Fatalf("seed %d: PR order changed the grouping:\n%v\nvs\n%v", seed, a, b)
+		}
 		seen := map[int]int{}
 		for _, grp := range snap.Groups {
 			if len(grp.PRs) == 0 {

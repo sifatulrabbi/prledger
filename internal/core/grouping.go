@@ -35,16 +35,32 @@ type Grouping struct {
 // the PRs left on their own.
 func (g Grouping) Suggest(prs []PR) (groups []Group, alone []PR) {
 	keys := newKeyFinder(g.TicketPrefixes)
-	_, inWorktree, rest := g.claim(prs)
-	_, rest = extendWorktrees(inWorktree, rest, keys)
+	_, rest := g.split(prs, keys)
 	groups, alone = autoGroups(rest, keys)
-	slices.SortStableFunc(groups, func(a, b Group) int { return newest(b.PRs).Compare(newest(a.PRs)) })
+	sortGroups(groups)
 	return groups, newestFirst(alone)
 }
 
-// claim builds the groups config rules claim, splits off the PRs each
-// worktree checked out, and returns the PRs left over.
-func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest []PR) {
+// split applies everything before automatic grouping: config rules, then
+// worktrees (pulling in linked PRs when Auto is on). It returns those groups,
+// uniquely named, and the PRs left over. arrange and Suggest share it so they
+// always agree on what is left.
+func (g Grouping) split(prs []PR, keys keyFinder) (claimed []Group, rest []PR) {
+	claimed, inWorktree, rest, owners := g.claim(prs)
+	if g.Auto {
+		inWorktree, rest = extendWorktrees(owners, inWorktree, rest, keys)
+	}
+	for i, w := range g.Worktrees {
+		if len(inWorktree[i]) > 0 {
+			claimed = append(claimed, Group{Name: w.Name, Worktree: w.Path, PRs: newestFirst(inWorktree[i])})
+		}
+	}
+	return claimed, rest
+}
+
+// claim builds the groups config rules claim, splits off the PRs on branches
+// each worktree owns, and returns the PRs left over.
+func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest []PR, owners map[string]int) {
 	byNumber := map[int]int{}
 	for i, r := range g.Rules {
 		for _, n := range r.PRs {
@@ -53,7 +69,7 @@ func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest 
 			}
 		}
 	}
-	owners := worktreeOwners(g.Worktrees)
+	owners = worktreeOwners(g.Worktrees)
 
 	ruled := make([][]PR, len(g.Rules))
 	inWorktree = make([][]PR, len(g.Worktrees))
@@ -73,34 +89,50 @@ func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest 
 			ruledGroups = append(ruledGroups, Group{Name: r.Name, PRs: newestFirst(ruled[i])})
 		}
 	}
-	return ruledGroups, inWorktree, rest
+	return ruledGroups, inWorktree, rest, owners
 }
 
 func (g Grouping) arrange(prs []PR) []Group {
 	keys := newKeyFinder(g.TicketPrefixes)
-	groups, inWorktree, rest := g.claim(prs)
-	if g.Auto {
-		inWorktree, rest = extendWorktrees(inWorktree, rest, keys)
-	}
-	for i, w := range g.Worktrees {
-		if len(inWorktree[i]) > 0 {
-			groups = append(groups, Group{Name: w.Name, Worktree: w.Path, PRs: newestFirst(inWorktree[i])})
-		}
-	}
-	ungrouped := rest
+	groups, ungrouped := g.split(prs, keys)
 	if g.Auto {
 		var auto []Group
-		auto, ungrouped = autoGroups(rest, keys)
+		auto, ungrouped = autoGroups(ungrouped, keys)
 		groups = append(groups, auto...)
 	}
-
-	slices.SortStableFunc(groups, func(a, b Group) int {
-		return newest(b.PRs).Compare(newest(a.PRs))
-	})
+	// Names are made unique in precedence order, so config rules keep theirs;
+	// "Ungrouped" is reserved for the real Ungrouped group.
+	taken := map[string]bool{UngroupedName: true}
+	for i := range groups {
+		groups[i].Name = UniqueName(groups[i].Name, taken)
+	}
+	sortGroups(groups)
 	if len(ungrouped) > 0 {
 		groups = append(groups, Group{Name: UngroupedName, PRs: newestFirst(ungrouped)})
 	}
 	return groups
+}
+
+// sortGroups orders groups by their newest PR, then by name, so the order is
+// the same whatever order the PRs came in.
+func sortGroups(groups []Group) {
+	slices.SortFunc(groups, func(a, b Group) int {
+		if c := newest(b.PRs).Compare(newest(a.PRs)); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+}
+
+// UniqueName returns name, or name with " (2)", " (3)"… if it is taken, and
+// marks the result taken.
+func UniqueName(name string, taken map[string]bool) string {
+	candidate := name
+	for n := 2; taken[candidate]; n++ {
+		candidate = fmt.Sprintf("%s (%d)", name, n)
+	}
+	taken[candidate] = true
+	return candidate
 }
 
 func (g Grouping) firstPatternMatch(p PR) int {
@@ -127,6 +159,28 @@ func newest(prs []PR) time.Time {
 // every linked set of two or more PRs into a group. PRs left on their own are
 // returned as ungrouped.
 func autoGroups(prs []PR, keys keyFinder) (groups []Group, alone []PR) {
+	for _, set := range linkedSets(prs, keys) {
+		if len(set.prs) < 2 {
+			alone = append(alone, set.prs[0])
+			continue
+		}
+		groups = append(groups, Group{Name: autoName(set.prs, set.keys), PRs: newestFirst(set.prs)})
+	}
+	return groups, alone
+}
+
+// linkedSet is PRs joined by shared links, with each PR's links and all the
+// ticket keys in the set.
+type linkedSet struct {
+	prs   []PR
+	links map[int][]string // PR number -> its links
+	keys  []string
+}
+
+// linkedSets splits prs into sets of PRs that share a ticket key or branch
+// family, directly or through other PRs (union-find). Which PRs end up
+// together does not depend on their order.
+func linkedSets(prs []PR, keys keyFinder) []linkedSet {
 	parent := make([]int, len(prs))
 	for i := range parent {
 		parent[i] = i
@@ -140,9 +194,11 @@ func autoGroups(prs []PR, keys keyFinder) (groups []Group, alone []PR) {
 	}
 	firstWith := map[string]int{} // link -> index of the first PR that had it
 	keysOf := make([][]string, len(prs))
+	linksOfPR := make([][]string, len(prs))
 	for i, p := range prs {
 		keysOf[i] = keys.find(p)
-		for _, link := range linksOf(p, keysOf[i]) {
+		linksOfPR[i] = linksOf(p, keysOf[i])
+		for _, link := range linksOfPR[i] {
 			if j, ok := firstWith[link]; ok {
 				parent[find(i)] = find(j)
 			} else {
@@ -151,30 +207,22 @@ func autoGroups(prs []PR, keys keyFinder) (groups []Group, alone []PR) {
 		}
 	}
 
-	members := map[int][]int{}
-	var roots []int
-	for i := range prs {
+	byRoot := map[int]int{} // root -> index into sets
+	var sets []linkedSet
+	for i, p := range prs {
 		r := find(i)
-		if _, seen := members[r]; !seen {
-			roots = append(roots, r)
+		at, seen := byRoot[r]
+		if !seen {
+			at = len(sets)
+			byRoot[r] = at
+			sets = append(sets, linkedSet{links: map[int][]string{}})
 		}
-		members[r] = append(members[r], i)
+		s := &sets[at]
+		s.prs = append(s.prs, p)
+		s.links[p.Number] = linksOfPR[i]
+		s.keys = append(s.keys, keysOf[i]...)
 	}
-	for _, r := range roots {
-		idx := members[r]
-		if len(idx) < 2 {
-			alone = append(alone, prs[idx[0]])
-			continue
-		}
-		var set []PR
-		var keys []string
-		for _, i := range idx {
-			set = append(set, prs[i])
-			keys = append(keys, keysOf[i]...)
-		}
-		groups = append(groups, Group{Name: autoName(set, keys), PRs: newestFirst(set)})
-	}
-	return groups, alone
+	return sets
 }
 
 // autoName names a group after its oldest PR, led by its ticket keys.

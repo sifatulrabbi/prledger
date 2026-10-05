@@ -64,7 +64,7 @@ func writeSuggestion(w io.Writer, repo core.Repo, groups []core.Group, alone []c
 	}
 	items := []suggestedGroup{}
 	for _, g := range groups {
-		sg := suggestedGroup{Name: uniqueName(g.Name, taken)}
+		sg := suggestedGroup{Name: core.UniqueName(g.Name, taken)}
 		for _, p := range g.PRs {
 			sg.PRs = append(sg.PRs, p.Number)
 		}
@@ -101,17 +101,6 @@ func writeSuggestion(w io.Writer, repo core.Repo, groups []core.Group, alone []c
 		}
 	}
 	return nil
-}
-
-// uniqueName returns name, or name with " (2)", " (3)"… if it is taken, and
-// marks the result taken.
-func uniqueName(name string, taken map[string]bool) string {
-	candidate := name
-	for n := 2; taken[candidate]; n++ {
-		candidate = fmt.Sprintf("%s (%d)", name, n)
-	}
-	taken[candidate] = true
-	return candidate
 }
 
 // oneLine replaces control characters and Unicode line breaks with spaces, so

@@ -44,6 +44,8 @@ func newDoctorCmd(d Deps, g *globalFlags) *cobra.Command {
 				r.ok("worktrees", "not used (worktree_groups: false)")
 			case repo == (core.Repo{}):
 				r.skip("worktrees", "repo")
+			case !isLocal(ctx, d, g.repo, repo):
+				r.ok("worktrees", "not used: this folder is not a checkout of "+repo.String())
 			default:
 				// Reading worktrees only improves grouping, so a failure is a
 				// note rather than a failed check.

@@ -11,51 +11,6 @@ type Worktree struct {
 	Current  string               // branch checked out now, "" when detached
 }
 
-// extendWorktrees moves each leftover PR that shares a link (ticket key or
-// branch family) with exactly one worktree's PRs into that worktree, and
-// repeats so chains of links follow. Stacked branches are often created
-// without being checked out, so the reflog alone misses them. A PR linked to
-// two worktrees stays in rest.
-func extendWorktrees(inWorktree [][]PR, rest []PR, keys keyFinder) ([][]PR, []PR) {
-	owner := map[string]map[int]bool{} // link -> worktrees holding a PR with it
-	claim := func(i int, p PR) {
-		for _, link := range linksOf(p, keys.find(p)) {
-			if owner[link] == nil {
-				owner[link] = map[int]bool{}
-			}
-			owner[link][i] = true
-		}
-	}
-	for i, prs := range inWorktree {
-		for _, p := range prs {
-			claim(i, p)
-		}
-	}
-	for moved := true; moved; {
-		moved = false
-		var left []PR
-		for _, p := range rest {
-			reached := map[int]bool{}
-			for _, link := range linksOf(p, keys.find(p)) {
-				for i := range owner[link] {
-					reached[i] = true
-				}
-			}
-			if len(reached) != 1 {
-				left = append(left, p)
-				continue
-			}
-			for i := range reached {
-				inWorktree[i] = append(inWorktree[i], p)
-				claim(i, p)
-			}
-			moved = true
-		}
-		rest = left
-	}
-	return inWorktree, rest
-}
-
 // worktreeOwners maps each branch to the index of the worktree that owns it:
 // the worktree where it is checked out now, else the one that checked it out
 // most recently. Ties go to the earlier worktree.
@@ -71,7 +26,8 @@ func worktreeOwners(wts []Worktree) map[string]int {
 		switch {
 		case !seen,
 			c.current && !old.current,
-			c.current == old.current && c.at.After(old.at):
+			c.current == old.current && c.at.After(old.at),
+			c.current == old.current && c.at.Equal(old.at) && c.idx < old.idx:
 			best[branch] = c
 		}
 	}
@@ -88,4 +44,52 @@ func worktreeOwners(wts []Worktree) map[string]int {
 		owners[b] = c.idx
 	}
 	return owners
+}
+
+// extendWorktrees moves leftover PRs into worktrees they are linked to.
+// Stacked branches are often created without being checked out, so the
+// reflog alone misses them. Leftover PRs are first joined into linked sets
+// (shared ticket key or branch family, as in automatic grouping); a set joins
+// a worktree when its links reach exactly that one, through the branches the
+// worktree owns or the PRs it already holds. Working on whole sets keeps the
+// result independent of PR order. A set reaching two worktrees stays in rest.
+func extendWorktrees(owners map[string]int, inWorktree [][]PR, rest []PR, keys keyFinder) ([][]PR, []PR) {
+	reaches := map[string]map[int]bool{} // link -> worktrees it leads to
+	mark := func(links []string, i int) {
+		for _, l := range links {
+			if reaches[l] == nil {
+				reaches[l] = map[int]bool{}
+			}
+			reaches[l][i] = true
+		}
+	}
+	for branch, i := range owners {
+		b := PR{Branch: branch}
+		mark(linksOf(b, keys.find(b)), i)
+	}
+	for i, prs := range inWorktree {
+		for _, p := range prs {
+			mark(linksOf(p, keys.find(p)), i)
+		}
+	}
+
+	var left []PR
+	for _, set := range linkedSets(rest, keys) {
+		reached := map[int]bool{}
+		for _, p := range set.prs {
+			for _, l := range set.links[p.Number] {
+				for i := range reaches[l] {
+					reached[i] = true
+				}
+			}
+		}
+		if len(reached) != 1 {
+			left = append(left, set.prs...)
+			continue
+		}
+		for i := range reached {
+			inWorktree[i] = append(inWorktree[i], set.prs...)
+		}
+	}
+	return inWorktree, left
 }

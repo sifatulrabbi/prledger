@@ -31,8 +31,12 @@ func List(ctx context.Context, dir string) ([]core.Worktree, error) {
 			continue
 		}
 		w := core.Worktree{Name: filepath.Base(e.Path), Path: e.Path, Current: e.Branch, Branches: map[string]time.Time{}}
-		// A worktree with no reflog yet still counts through its current branch.
-		if log, err := run(ctx, e.Path, "reflog", "show", "--date=unix", "--format=%gd%x09%gs", "HEAD"); err == nil {
+		// A worktree with no reflog still counts through its current branch.
+		log, err := run(ctx, e.Path, "reflog", "show", "--date=unix", "--format=%gd%x09%gs", "HEAD")
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err == nil {
 			w.Branches = parseReflog(log)
 		}
 		wts = append(wts, w)
@@ -81,7 +85,7 @@ func parsePorcelain(out string) []entry {
 
 var (
 	reflogLine = regexp.MustCompile(`^HEAD@\{(\d+)\}\tcheckout: moving from (\S+) to (\S+)$`)
-	commitSHA  = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	commitSHA  = regexp.MustCompile(`^([0-9a-f]{40}|[0-9a-f]{64})$`) // SHA-1 or SHA-256 repos
 )
 
 // parseReflog returns each branch the worktree checked out, or left by
