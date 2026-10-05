@@ -18,6 +18,7 @@
   --open: #3fb950; --draft: #8b949e; --merged: #a371f7; --closed: #f85149; color-scheme: dark } }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* else .btn's display wins over the hidden attribute */
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; display: grid; gap: 16px; }
 header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
@@ -133,7 +134,7 @@ function renderChips() {
 
 function card(p) {
   const a = el("a", "card");
-  a.href = p.url;
+  a.href = /^https:\/\//.test(p.url) ? p.url : "#"; // never a javascript: link from edited data
   a.target = "_blank";
   a.rel = "noopener";
   const top = el("div", "top");
