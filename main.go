@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
 	"time"
 
+	"github.com/sifatulrabbi/prledger/internal/browser"
 	"github.com/sifatulrabbi/prledger/internal/cli"
 	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/gh"
@@ -17,14 +20,18 @@ import (
 var version string
 
 func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	info, _ := debug.ReadBuildInfo()
 	root := cli.NewRoot(cli.Deps{
-		Stdout:  os.Stdout,
-		Stderr:  os.Stderr,
-		Version: cli.ResolveVersion(version, info),
-		Now:     time.Now,
-		Runner:  gh.ExecRunner{},
-		Getenv:  os.Getenv,
+		Stdout:      os.Stdout,
+		Stderr:      os.Stderr,
+		Version:     cli.ResolveVersion(version, info),
+		Now:         time.Now,
+		Runner:      gh.ExecRunner{},
+		Getenv:      os.Getenv,
+		OpenBrowser: browser.Open,
 		DetectRepo: func(ctx context.Context) (core.Repo, error) {
 			dir, err := os.Getwd()
 			if err != nil {
@@ -33,7 +40,7 @@ func main() {
 			return gitremote.Origin(ctx, dir)
 		},
 	})
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "prledger:", err)
 		os.Exit(1)
 	}

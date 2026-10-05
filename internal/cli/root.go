@@ -30,6 +30,8 @@ type Deps struct {
 	DetectRepo func(ctx context.Context) (core.Repo, error)
 	// Getenv reads environment variables (config path, $HOME, $VAR expansion).
 	Getenv func(string) string
+	// OpenBrowser opens a URL in the user's browser.
+	OpenBrowser func(url string) error
 }
 
 // globalFlags are flags every command shares.
@@ -70,6 +72,7 @@ func NewRoot(d Deps) *cobra.Command {
 		},
 		newListCmd(d, g),
 		newConfigCmd(d, g),
+		newServeCmd(d, g),
 	)
 	return root
 }
