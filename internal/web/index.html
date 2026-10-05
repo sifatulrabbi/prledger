@@ -47,6 +47,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .tally { display: inline-flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .tally span { display: inline-flex; gap: 4px; align-items: center; }
+.where { font-family: var(--mono); font-size: 11.5px; color: var(--muted); overflow-wrap: anywhere; flex-basis: 100%; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; padding-block: 12px 4px; }
 .card { display: grid; gap: 6px; align-content: start; min-width: 0; padding: 12px; border-radius: 8px;
@@ -175,6 +176,7 @@ function render() {
       tally.append(t);
     }
     sum.append(tally);
+    if (g.worktree) sum.append(el("span", "where", "worktree " + g.worktree));
     const grid = el("div", "grid");
     shown.forEach(p => grid.append(card(p)));
     d.append(sum, grid);

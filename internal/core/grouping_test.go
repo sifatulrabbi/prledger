@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
 )
@@ -248,6 +249,16 @@ func TestEveryPRLandsInExactlyOneGroup(t *testing.T) {
 			prs = append(prs, core.PR{Number: n, Branch: branch, Title: pick() + " " + pick(), CreatedAt: day(1 + r.IntN(28))})
 		}
 		g := core.Grouping{Auto: r.IntN(2) == 0}
+		for i := range r.IntN(3) {
+			w := core.Worktree{Name: "wt" + strconv.Itoa(i), Branches: map[string]time.Time{}}
+			for range r.IntN(5) {
+				w.Branches[prs[r.IntN(len(prs))].Branch] = day(1 + r.IntN(28))
+			}
+			if r.IntN(2) == 0 {
+				w.Current = prs[r.IntN(len(prs))].Branch
+			}
+			g.Worktrees = append(g.Worktrees, w)
+		}
 		for i := range r.IntN(4) {
 			rule := core.GroupRule{Name: "rule" + strconv.Itoa(i), PRs: []int{1 + r.IntN(40)}}
 			if r.IntN(2) == 0 {

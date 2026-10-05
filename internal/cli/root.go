@@ -29,6 +29,8 @@ type Deps struct {
 	Runner gh.Runner
 	// DetectRepo finds the repo of the current directory.
 	DetectRepo func(ctx context.Context) (core.Repo, error)
+	// Worktrees lists the git worktrees of the current directory's repo.
+	Worktrees func(ctx context.Context) ([]core.Worktree, error)
 	// Getenv reads environment variables (config path, $HOME, $VAR expansion).
 	Getenv func(string) string
 	// OpenBrowser opens a URL in the user's browser.
@@ -93,12 +95,20 @@ func configPath(d Deps, g *globalFlags) (string, error) {
 type target struct {
 	repo     core.Repo
 	settings config.Settings
+	// local is true when the current directory is a checkout of repo, so its
+	// git worktrees belong to it.
+	local bool
 }
 
 func resolveTarget(cmd *cobra.Command, d Deps, g *globalFlags) (target, error) {
 	repo, err := resolveRepo(cmd.Context(), d, g.repo)
 	if err != nil {
 		return target{}, err
+	}
+	local := g.repo == ""
+	if !local {
+		here, err := d.DetectRepo(cmd.Context())
+		local = err == nil && strings.EqualFold(here.String(), repo.String())
 	}
 	path, err := configPath(d, g)
 	if err != nil {
@@ -122,7 +132,7 @@ func resolveTarget(cmd *cobra.Command, d Deps, g *globalFlags) (target, error) {
 		}
 		s.Limit = g.limit
 	}
-	return target{repo: repo, settings: s}, nil
+	return target{repo: repo, settings: s, local: local}, nil
 }
 
 func (t target) client(d Deps) gh.Client {
@@ -133,12 +143,33 @@ func clientFor(d Deps, s config.Settings) gh.Client {
 	return gh.Client{Runner: d.Runner, Command: s.Command, Env: s.Env}
 }
 
-func (t target) ledger(d Deps) core.Ledger {
+// ledger builds a Ledger with the worktrees as they are now; call it per fetch
+// or regroup so worktrees added meanwhile are picked up.
+func (t target) ledger(ctx context.Context, d Deps) core.Ledger {
 	return core.Ledger{
-		Source:   t.client(d),
-		Now:      d.Now,
-		Grouping: core.Grouping{Rules: t.settings.Groups, Auto: t.settings.AutoGroups, TicketPrefixes: t.settings.TicketPrefixes},
+		Source: t.client(d),
+		Now:    d.Now,
+		Grouping: core.Grouping{
+			Rules:          t.settings.Groups,
+			Worktrees:      t.worktrees(ctx, d),
+			Auto:           t.settings.AutoGroups,
+			TicketPrefixes: t.settings.TicketPrefixes,
+		},
 	}
+}
+
+// worktrees lists the local worktrees if they apply to this target. Failing
+// to read them only costs grouping, so it warns rather than fails.
+func (t target) worktrees(ctx context.Context, d Deps) []core.Worktree {
+	if !t.settings.WorktreeGroups || !t.local {
+		return nil
+	}
+	wts, err := d.Worktrees(ctx)
+	if err != nil {
+		fmt.Fprintf(d.Stderr, "warning: not grouping by worktree: %v\n", err)
+		return nil
+	}
+	return wts
 }
 
 // ghAccountVars are inherited environment variables that change which
@@ -171,7 +202,7 @@ func (t target) cache(d Deps) (regroupedCache, error) {
 	if err != nil {
 		return regroupedCache{}, err
 	}
-	return regroupedCache{File: file, ledger: t.ledger(d)}, nil
+	return regroupedCache{File: file, ledger: func(ctx context.Context) core.Ledger { return t.ledger(ctx, d) }}, nil
 }
 
 // tracker fetches through gh and keeps the cache up to date until life ends.
@@ -180,7 +211,7 @@ func (t target) tracker(life context.Context, d Deps) (*core.Tracker, error) {
 	if err != nil {
 		return nil, err
 	}
-	fetch := func(ctx context.Context) (core.Snapshot, error) { return c.ledger.Snapshot(ctx, t.query()) }
+	fetch := func(ctx context.Context) (core.Snapshot, error) { return c.ledger(ctx).Snapshot(ctx, t.query()) }
 	return core.NewTracker(life, fetch, c), nil
 }
 
@@ -201,7 +232,7 @@ func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapsh
 		}
 		return snap, nil
 	}
-	snap, err := c.ledger.Snapshot(cmd.Context(), t.query())
+	snap, err := c.ledger(cmd.Context()).Snapshot(cmd.Context(), t.query())
 	if err != nil {
 		return core.Snapshot{}, err
 	}
@@ -213,13 +244,13 @@ func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapsh
 
 type regroupedCache struct {
 	cache.File
-	ledger core.Ledger
+	ledger func(context.Context) core.Ledger
 }
 
 func (c regroupedCache) Load() (core.Snapshot, bool, error) {
 	snap, ok, err := c.File.Load()
 	if ok {
-		snap = c.ledger.Regroup(snap)
+		snap = c.ledger(context.Background()).Regroup(snap)
 	}
 	return snap, ok, err
 }

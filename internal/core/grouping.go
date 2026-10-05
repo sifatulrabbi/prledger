@@ -18,28 +18,33 @@ type GroupRule struct {
 }
 
 // Grouping decides which group each PR lands in. Precedence: a rule that
-// lists the PR's number, then the first rule whose pattern matches, then (if
-// Auto) automatic grouping, then Ungrouped.
+// lists the PR's number, then the first rule whose pattern matches, then the
+// worktree that checked the branch out, then (if Auto) automatic grouping,
+// then Ungrouped.
 type Grouping struct {
-	Rules []GroupRule
-	Auto  bool
+	Rules     []GroupRule
+	Worktrees []Worktree
+	Auto      bool
 	// TicketPrefixes, when set, are the only ticket key prefixes automatic
 	// grouping recognises (e.g. "SEQ" for SEQ-123). Unset means guess.
 	TicketPrefixes []string
 }
 
-// Suggest runs automatic grouping over the PRs no rule claims, whether or not
-// Auto is on. It returns the linked groups (newest first) and the PRs left on
-// their own.
+// Suggest runs automatic grouping over the PRs no rule or worktree claims,
+// whether or not Auto is on. It returns the linked groups (newest first) and
+// the PRs left on their own.
 func (g Grouping) Suggest(prs []PR) (groups []Group, alone []PR) {
-	_, rest := g.claim(prs)
-	groups, alone = autoGroups(rest, newKeyFinder(g.TicketPrefixes))
+	keys := newKeyFinder(g.TicketPrefixes)
+	_, inWorktree, rest := g.claim(prs)
+	_, rest = extendWorktrees(inWorktree, rest, keys)
+	groups, alone = autoGroups(rest, keys)
 	slices.SortStableFunc(groups, func(a, b Group) int { return newest(b.PRs).Compare(newest(a.PRs)) })
 	return groups, newestFirst(alone)
 }
 
-// claim splits prs into those each rule claims (by index) and the rest.
-func (g Grouping) claim(prs []PR) (ruled [][]PR, rest []PR) {
+// claim builds the groups config rules claim, splits off the PRs each
+// worktree checked out, and returns the PRs left over.
+func (g Grouping) claim(prs []PR) (ruledGroups []Group, inWorktree [][]PR, rest []PR) {
 	byNumber := map[int]int{}
 	for i, r := range g.Rules {
 		for _, n := range r.PRs {
@@ -48,34 +53,44 @@ func (g Grouping) claim(prs []PR) (ruled [][]PR, rest []PR) {
 			}
 		}
 	}
+	owners := worktreeOwners(g.Worktrees)
 
-	ruled = make([][]PR, len(g.Rules))
+	ruled := make([][]PR, len(g.Rules))
+	inWorktree = make([][]PR, len(g.Worktrees))
 	for _, p := range prs {
 		if i, ok := byNumber[p.Number]; ok {
 			ruled[i] = append(ruled[i], p)
-			continue
-		}
-		if i := g.firstPatternMatch(p); i >= 0 {
+		} else if i := g.firstPatternMatch(p); i >= 0 {
 			ruled[i] = append(ruled[i], p)
-			continue
+		} else if i, ok := owners[p.Branch]; ok {
+			inWorktree[i] = append(inWorktree[i], p)
+		} else {
+			rest = append(rest, p)
 		}
-		rest = append(rest, p)
 	}
-	return ruled, rest
+	for i, r := range g.Rules {
+		if len(ruled[i]) > 0 {
+			ruledGroups = append(ruledGroups, Group{Name: r.Name, PRs: newestFirst(ruled[i])})
+		}
+	}
+	return ruledGroups, inWorktree, rest
 }
 
 func (g Grouping) arrange(prs []PR) []Group {
-	ruled, rest := g.claim(prs)
-	var groups []Group
-	for i, r := range g.Rules {
-		if len(ruled[i]) > 0 {
-			groups = append(groups, Group{Name: r.Name, PRs: newestFirst(ruled[i])})
+	keys := newKeyFinder(g.TicketPrefixes)
+	groups, inWorktree, rest := g.claim(prs)
+	if g.Auto {
+		inWorktree, rest = extendWorktrees(inWorktree, rest, keys)
+	}
+	for i, w := range g.Worktrees {
+		if len(inWorktree[i]) > 0 {
+			groups = append(groups, Group{Name: w.Name, Worktree: w.Path, PRs: newestFirst(inWorktree[i])})
 		}
 	}
 	ungrouped := rest
 	if g.Auto {
 		var auto []Group
-		auto, ungrouped = autoGroups(rest, newKeyFinder(g.TicketPrefixes))
+		auto, ungrouped = autoGroups(rest, keys)
 		groups = append(groups, auto...)
 	}
 
@@ -127,8 +142,7 @@ func autoGroups(prs []PR, keys keyFinder) (groups []Group, alone []PR) {
 	keysOf := make([][]string, len(prs))
 	for i, p := range prs {
 		keysOf[i] = keys.find(p)
-		links := append(slices.Clone(keysOf[i]), "branch:"+branchFamily(p.Branch))
-		for _, link := range links {
+		for _, link := range linksOf(p, keysOf[i]) {
 			if j, ok := firstWith[link]; ok {
 				parent[find(i)] = find(j)
 			} else {
@@ -240,6 +254,12 @@ func (k keyFinder) find(p PR) []string {
 	}
 	slices.Sort(keys)
 	return slices.Compact(keys)
+}
+
+// linksOf is what ties a PR to others in automatic grouping: its ticket keys
+// and its branch family.
+func linksOf(p PR, ticketKeys []string) []string {
+	return append(slices.Clone(ticketKeys), "branch:"+branchFamily(p.Branch))
 }
 
 // branchFamily drops a "-split/<slice>" suffix, so the slices of a split PR

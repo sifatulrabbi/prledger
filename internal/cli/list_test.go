@@ -41,6 +41,9 @@ type harness struct {
 	stderr bytes.Buffer
 	env    map[string]string
 	deps   Deps
+	// worktrees is what the local checkout reports; nil by default.
+	worktrees   []core.Worktree
+	worktreeErr error
 }
 
 // writeConfig writes body to the harness's config file.
@@ -64,6 +67,7 @@ func newHarness(t *testing.T) *harness {
 		"XDG_CACHE_HOME":  t.TempDir(),
 	}
 	h.deps = Deps{
+		Worktrees:  func(context.Context) ([]core.Worktree, error) { return h.worktrees, h.worktreeErr },
 		Getenv:     func(k string) string { return h.env[k] },
 		Stdout:     &h.stdout,
 		Stderr:     &h.stderr,

@@ -14,6 +14,7 @@ import (
 	"github.com/sifatulrabbi/prledger/internal/core"
 	"github.com/sifatulrabbi/prledger/internal/gh"
 	"github.com/sifatulrabbi/prledger/internal/gitremote"
+	"github.com/sifatulrabbi/prledger/internal/gitworktree"
 )
 
 // version is set at release time with -ldflags "-X main.version=vX.Y.Z".
@@ -38,6 +39,13 @@ func main() {
 				return core.Repo{}, err
 			}
 			return gitremote.Origin(ctx, dir)
+		},
+		Worktrees: func(ctx context.Context) ([]core.Worktree, error) {
+			dir, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			return gitworktree.List(ctx, dir)
 		},
 	})
 	if err := root.ExecuteContext(ctx); err != nil {

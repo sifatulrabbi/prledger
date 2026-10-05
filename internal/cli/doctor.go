@@ -32,10 +32,26 @@ func newDoctorCmd(d Deps, g *globalFlags) *cobra.Command {
 
 			settings, err := doctorConfig(d, g, repo, r)
 			if err != nil {
+				r.skip("worktrees", "the config")
 				r.skip("gh", "the config")
 				r.skip("gh login", "the config")
 				r.skip("gh user", "the config")
 				return r.result()
+			}
+
+			switch {
+			case !settings.WorktreeGroups:
+				r.ok("worktrees", "not used (worktree_groups: false)")
+			case repo == (core.Repo{}):
+				r.skip("worktrees", "repo")
+			default:
+				// Reading worktrees only improves grouping, so a failure is a
+				// note rather than a failed check.
+				if wts, err := d.Worktrees(ctx); err != nil {
+					r.line("note", "worktrees", "not grouping by worktree: "+err.Error())
+				} else {
+					r.ok("worktrees", fmt.Sprintf("%d found (the main checkout is not counted)", len(wts)))
+				}
 			}
 
 			client := clientFor(d, settings)
