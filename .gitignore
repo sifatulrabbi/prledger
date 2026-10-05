@@ -1,0 +1,14 @@
+# build output
+/prledger
+/dist/
+*.test
+coverage.out
+
+# exported pages (prledger export html)
+prledger-*.html
+
+# local-only notes and planning
+*.local.md
+.planning/
+
+.DS_Store
