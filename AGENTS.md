@@ -17,7 +17,3 @@ Go 1.27 CLI (cobra) that lists the current `gh` user's PRs in the current repo, 
 - Text from PRs (titles, branches) is untrusted: it goes through `textContent` in the page, JSON escaping in exports, and `oneLine` before YAML comments.
 - Test fixtures are synthetic. Never commit real PR data from other repos.
 - No GitHub workflows. Verify locally with `make check` (gofmt, vet, race tests) before every commit. Releases are Makefile targets (`release-dry`, `release`); see the README's Releasing section. Keep release logic in the Makefile, not in separate scripts.
-
-## Developing in this repo
-
-The maintainer has two GitHub accounts. Prefix every `gh` and `git` command in this repo with the `with-gh-personal` alias. It is a zsh alias for `GH_CONFIG_DIR=$HOME/.config/gh-personal`, so an agent shell must run it as `zsh -ic 'with-gh-personal git …'`. The `origin` remote is HTTPS and git gets its credentials from gh (`gh auth git-credential`), so the prefix also picks the account `git push` uses.
