@@ -209,6 +209,24 @@ func TestRegroupAppliesTheCurrentGrouping(t *testing.T) {
 	}
 }
 
+// Suggest proposes the automatic groups for PRs no configured rule claims,
+// even when automatic grouping is off for display.
+func TestSuggestSkipsClaimedPRs(t *testing.T) {
+	g := core.Grouping{Auto: false, Rules: []core.GroupRule{{Name: "Mine", PRs: []int{1}}}}
+	groups, alone := g.Suggest([]core.PR{
+		pr(1, "a/abc-11-x", "claimed"),
+		pr(2, "a/abc-11-y", "two"),
+		pr(3, "a/abc-11-z", "three"),
+		pr(4, "lonely", "four"),
+	})
+	if len(groups) != 1 || groups[0].Name != "ABC-11 · two" || len(groups[0].PRs) != 2 {
+		t.Fatalf("groups = %+v, want ABC-11 with #2 and #3 only", groups)
+	}
+	if len(alone) != 1 || alone[0].Number != 4 {
+		t.Fatalf("alone = %+v, want #4", alone)
+	}
+}
+
 func TestRulesThatMatchNothingAreLeftOut(t *testing.T) {
 	g := core.Grouping{Rules: []core.GroupRule{{Name: "Empty", PRs: []int{42}}}}
 	snap := snapshotOf(t, g, pr(1, "a", "one"))

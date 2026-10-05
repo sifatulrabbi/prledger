@@ -1,0 +1,8 @@
+[
+  {"number":26,"title":"feat(ui): search results page (ABC-21)","headRefName":"alice/abc-21-results","state":"OPEN","isDraft":false,"url":"https://github.com/octo/hello-world/pull/26","createdAt":"2026-09-26T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":25,"title":"feat(api): search endpoint","headRefName":"alice/abc-21-api","state":"MERGED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/25","createdAt":"2026-09-25T10:00:00Z","mergedAt":"2026-09-26T09:00:00Z","closedAt":"2026-09-26T09:00:00Z"},
+  {"number":24,"title":"feat: cache layer (slice 2)","headRefName":"alice/cache-split/store","state":"OPEN","isDraft":true,"url":"https://github.com/octo/hello-world/pull/24","createdAt":"2026-09-24T10:00:00Z","mergedAt":null,"closedAt":null},
+  {"number":23,"title":"feat: cache layer (slice 1)","headRefName":"alice/cache-split/flag","state":"MERGED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/23","createdAt":"2026-09-23T10:00:00Z","mergedAt":"2026-09-24T09:00:00Z","closedAt":"2026-09-24T09:00:00Z"},
+  {"number":22,"title":"feat: cache layer","headRefName":"alice/cache","state":"CLOSED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/22","createdAt":"2026-09-22T10:00:00Z","mergedAt":null,"closedAt":"2026-09-23T09:00:00Z"},
+  {"number":21,"title":"docs: readme tweaks","headRefName":"alice/readme","state":"MERGED","isDraft":false,"url":"https://github.com/octo/hello-world/pull/21","createdAt":"2026-09-21T10:00:00Z","mergedAt":"2026-09-21T12:00:00Z","closedAt":"2026-09-21T12:00:00Z"}
+]

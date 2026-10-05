@@ -30,6 +30,7 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 | `prledger serve` | Opens a page in your browser with every pull request as a card, grouped, with status filters and search. Click a card to open the PR on GitHub. `--port n` picks the port, `--no-open` skips opening the browser. Press Ctrl-C to stop. |
 | `prledger list` | Prints your pull requests grouped by feature. `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger export html` | Writes the same page as one standalone file you can open or share, with the data baked in. Default file: `prledger-<owner>-<repo>.html` in the current folder; `-o file` picks another. `--cached` uses the last fetched data. |
+| `prledger groups suggest` | Prints a `groups:` block built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. Paste it into your config and rename the groups. `--cached` uses the last fetched data. |
 | `prledger config path` | Prints the config file prledger reads, and says if it does not exist yet. |
 | `prledger config init` | Writes a commented starter config. Never overwrites an existing file. |
 | `prledger version` | Prints the version. |

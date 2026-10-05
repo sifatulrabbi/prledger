@@ -28,7 +28,18 @@ type Grouping struct {
 	TicketPrefixes []string
 }
 
-func (g Grouping) arrange(prs []PR) []Group {
+// Suggest runs automatic grouping over the PRs no rule claims, whether or not
+// Auto is on. It returns the linked groups (newest first) and the PRs left on
+// their own.
+func (g Grouping) Suggest(prs []PR) (groups []Group, alone []PR) {
+	_, rest := g.claim(prs)
+	groups, alone = autoGroups(rest, newKeyFinder(g.TicketPrefixes))
+	slices.SortStableFunc(groups, func(a, b Group) int { return newest(b.PRs).Compare(newest(a.PRs)) })
+	return groups, newestFirst(alone)
+}
+
+// claim splits prs into those each rule claims (by index) and the rest.
+func (g Grouping) claim(prs []PR) (ruled [][]PR, rest []PR) {
 	byNumber := map[int]int{}
 	for i, r := range g.Rules {
 		for _, n := range r.PRs {
@@ -38,8 +49,7 @@ func (g Grouping) arrange(prs []PR) []Group {
 		}
 	}
 
-	ruled := make([][]PR, len(g.Rules))
-	var rest []PR
+	ruled = make([][]PR, len(g.Rules))
 	for _, p := range prs {
 		if i, ok := byNumber[p.Number]; ok {
 			ruled[i] = append(ruled[i], p)
@@ -51,7 +61,11 @@ func (g Grouping) arrange(prs []PR) []Group {
 		}
 		rest = append(rest, p)
 	}
+	return ruled, rest
+}
 
+func (g Grouping) arrange(prs []PR) []Group {
+	ruled, rest := g.claim(prs)
 	var groups []Group
 	for i, r := range g.Rules {
 		if len(ruled[i]) > 0 {

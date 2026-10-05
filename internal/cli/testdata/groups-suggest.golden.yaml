@@ -1,0 +1,9 @@
+# Suggested groups for octo/hello-world. Paste under repos.octo/hello-world in your config
+# (prledger config path) and rename them.
+groups:
+  - name: 'ABC-21 · feat(api): search endpoint'
+    prs: [26, 25]
+  - name: 'feat: cache layer'
+    prs: [24, 23, 22]
+# Pull requests prledger could not link to others (add them to a group by hand):
+#   21  docs: readme tweaks

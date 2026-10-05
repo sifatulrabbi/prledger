@@ -75,6 +75,7 @@ func NewRoot(d Deps) *cobra.Command {
 		newConfigCmd(d, g),
 		newServeCmd(d, g),
 		newExportCmd(d, g),
+		newGroupsCmd(d, g),
 	)
 	return root
 }
