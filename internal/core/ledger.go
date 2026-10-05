@@ -56,13 +56,16 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	}, nil
 }
 
+// olderFirst orders PRs by creation time, then number.
+func olderFirst(a, b PR) int {
+	if c := a.CreatedAt.Compare(b.CreatedAt); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Number, b.Number)
+}
+
 func newestFirst(prs []PR) []PR {
 	out := slices.Clone(prs)
-	slices.SortFunc(out, func(a, b PR) int {
-		if c := b.CreatedAt.Compare(a.CreatedAt); c != 0 {
-			return c
-		}
-		return cmp.Compare(b.Number, a.Number)
-	})
+	slices.SortFunc(out, func(a, b PR) int { return olderFirst(b, a) })
 	return out
 }

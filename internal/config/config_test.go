@@ -198,25 +198,57 @@ func TestBadGroupsAreReportedByName(t *testing.T) {
 	}
 	for name, groups := range cases {
 		t.Run(name, func(t *testing.T) {
-			f, err := Load(write(t, "repos:\n  octo/hello-world:\n"+groups))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := f.For(repo, env); err == nil || !strings.Contains(err.Error(), wantInErr[name]) {
+			if err := configErr(t, "repos:\n  octo/hello-world:\n"+groups); err == nil || !strings.Contains(err.Error(), wantInErr[name]) {
 				t.Fatalf("err = %v, want it to mention %s", err, wantInErr[name])
 			}
 		})
 	}
 }
 
-func TestGroupsInDefaultsAreRejected(t *testing.T) {
-	f, err := Load(write(t, "defaults:\n  groups:\n    - {name: X, prs: [1]}\n"))
-	if err != nil {
-		t.Fatal(err)
+func TestTicketPrefixes(t *testing.T) {
+	s := settingsFor(t, "defaults:\n  ticket_prefixes: [SEQ]\nrepos:\n  octo/hello-world:\n    ticket_prefixes: [PRO, seq]\n")
+	if want := []string{"PRO", "seq"}; !reflect.DeepEqual(s.TicketPrefixes, want) {
+		t.Fatalf("prefixes = %q, want %q", s.TicketPrefixes, want)
 	}
-	if _, err := f.For(repo, env); err == nil || !strings.Contains(err.Error(), "repos.") {
+	if err := configErr(t, "defaults:\n  ticket_prefixes: [\"SE Q\"]\n"); err == nil || !strings.Contains(err.Error(), "ticket_prefixes") {
+		t.Fatalf("err = %v, want a ticket_prefixes error", err)
+	}
+}
+
+// Regression: only the current repo's section was checked, so a broken
+// regex elsewhere went unnoticed until you ran prledger in that repo.
+func TestLoadChecksEveryRepoSection(t *testing.T) {
+	path := write(t, "repos:\n  someone/else:\n    groups:\n      - {name: Broken, title: \"[\"}\n")
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "someone/else") || !strings.Contains(err.Error(), `"Broken"`) {
+		t.Fatalf("err = %v, want the repo and group named", err)
+	}
+}
+
+// Regression: keys differing only in case made the section chosen depend on
+// map iteration order.
+func TestRepoKeysDifferingOnlyInCaseAreRejected(t *testing.T) {
+	_, err := Load(write(t, "repos:\n  octo/hello-world: {author: a}\n  Octo/Hello-World: {author: b}\n"))
+	if err == nil || !strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("err = %v, want a duplicate repo error", err)
+	}
+}
+
+func TestGroupsInDefaultsAreRejected(t *testing.T) {
+	if err := configErr(t, "defaults:\n  groups:\n    - {name: X, prs: [1]}\n"); err == nil || !strings.Contains(err.Error(), "repos.") {
 		t.Fatalf("err = %v, want a hint to move groups under repos", err)
 	}
+}
+
+// configErr loads body and resolves it for repo, returning the first error.
+func configErr(t *testing.T, body string) error {
+	t.Helper()
+	f, err := Load(write(t, body))
+	if err != nil {
+		return err
+	}
+	_, err = f.For(repo, env)
+	return err
 }
 
 func TestPathPrecedence(t *testing.T) {

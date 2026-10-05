@@ -42,6 +42,9 @@ func TestParseRemoteRejectsNonRepoURLs(t *testing.T) {
 		"https://github.com/",
 		"git@github.com:octo",
 		"/local/path/to/repo",
+		// A slash before the colon makes it a local path, not host:path.
+		"/srv/git:octo/hello-world",
+		"./mirror:octo/hello-world",
 		"https://github.com/octo/hello-world/extra",
 	} {
 		if got, err := ParseRemote(url); err == nil {

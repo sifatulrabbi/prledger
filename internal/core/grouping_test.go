@@ -110,6 +110,43 @@ func TestWordsWithNumbersAreNotTicketKeys(t *testing.T) {
 	assertLayout(t, snap, layout{{core.UngroupedName, []int{4, 3, 2, 1}}})
 }
 
+// Regression: technical terms and conventional-commit words followed by a
+// number were read as ticket keys and grouped unrelated PRs.
+func TestCommonWordsWithNumbersAreNotTicketKeys(t *testing.T) {
+	snap := snapshotOf(t, auto,
+		pr(1, "alice/sha-checksums", "feat: SHA-256 checksums for uploads"),
+		pr(2, "alice/webhook-sig", "fix: verify SHA-256 webhook signatures"),
+		pr(3, "alice/fix-500-on-login", "a"),
+		pr(4, "alice/fix-500-on-search", "b"),
+		pr(5, "update-2025-deps", "Bump deps"),
+		pr(6, "update-2025-readme", "Readme"),
+		pr(7, "dates", "parse ISO-8601 dates"),
+		pr(8, "more-dates", "format ISO-8601 dates"),
+	)
+	assertLayout(t, snap, layout{{core.UngroupedName, []int{8, 7, 6, 5, 4, 3, 2, 1}}})
+}
+
+// With ticket prefixes configured only those count, in any case, so there is
+// no guessing at all.
+func TestTicketPrefixesRestrictKeys(t *testing.T) {
+	g := core.Grouping{Auto: true, TicketPrefixes: []string{"SEQ"}}
+	snap := snapshotOf(t, g,
+		pr(1, "alice/seq-7-login", "fix login"),
+		pr(2, "alice/api", "seq-7 api"),        // lower case in a title is fine here
+		pr(3, "alice/abc-12-search", "search"), // not a configured prefix
+		pr(4, "alice/abc-12-ui", "ui"),
+	)
+	assertLayout(t, snap, layout{{"SEQ-7 · fix login", []int{2, 1}}, {core.UngroupedName, []int{4, 3}}})
+}
+
+func TestGroupNameListsTwoKeysAndCountsMore(t *testing.T) {
+	two := snapshotOf(t, auto, pr(1, "a/abc-11-x", "one"), pr(2, "a/abc-11-y", "two (XYZ-22)"))
+	assertLayout(t, two, layout{{"ABC-11, XYZ-22 · one", []int{2, 1}}})
+
+	many := snapshotOf(t, auto, pr(1, "a/abc-11-x", "one (DEF-33)"), pr(2, "a/abc-11-y", "two (XYZ-22)"))
+	assertLayout(t, many, layout{{"ABC-11 +2 · one (DEF-33)", []int{2, 1}}})
+}
+
 func TestSplitBranchesJoinTheirBase(t *testing.T) {
 	snap := snapshotOf(t, auto,
 		pr(1, "alice/auto-compact", "feat: auto-compact"),

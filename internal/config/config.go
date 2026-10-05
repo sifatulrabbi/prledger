@@ -33,7 +33,9 @@ type RepoConfig struct {
 	Author     string            `yaml:"author"`
 	Limit      int               `yaml:"limit"`
 	AutoGroups *bool             `yaml:"auto_groups"`
-	Groups     []GroupConfig     `yaml:"groups"`
+	// TicketPrefixes limits automatic grouping to these ticket key prefixes.
+	TicketPrefixes []string      `yaml:"ticket_prefixes"`
+	Groups         []GroupConfig `yaml:"groups"`
 }
 
 // GroupConfig defines one group. A PR joins it if its number is in PRs, or
@@ -47,12 +49,13 @@ type GroupConfig struct {
 
 // Settings is the resolved configuration for one repo.
 type Settings struct {
-	Command    []string
-	Env        map[string]string
-	Author     string
-	Limit      int
-	AutoGroups bool
-	Groups     []core.GroupRule
+	Command        []string
+	Env            map[string]string
+	Author         string
+	Limit          int
+	AutoGroups     bool
+	TicketPrefixes []string
+	Groups         []core.GroupRule
 }
 
 // Command is how to start gh. In YAML it is either a string split on spaces
@@ -96,16 +99,53 @@ func Load(path string) (File, error) {
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
 		return File{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := f.validate(); err != nil {
+		return File{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	return f, nil
+}
+
+var prefixPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]*$`)
+
+// validate checks every section, not only the repo prledger runs in, so a
+// mistake anywhere in the file shows up on the next run.
+func (f File) validate() error {
+	if len(f.Defaults.Groups) > 0 {
+		return errors.New("groups belong in a repos.<owner/name> section, not in defaults")
+	}
+	if err := checkPrefixes("defaults", f.Defaults.TicketPrefixes); err != nil {
+		return err
+	}
+	seen := map[string]string{}
+	for key, rc := range f.Repos {
+		lower := strings.ToLower(key)
+		if other, dup := seen[lower]; dup {
+			return fmt.Errorf("repo %q is listed more than once (as %q and %q; names are not case-sensitive)", lower, other, key)
+		}
+		seen[lower] = key
+		if err := checkPrefixes(key, rc.TicketPrefixes); err != nil {
+			return err
+		}
+		if _, err := compileGroups(rc.Groups); err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func checkPrefixes(section string, prefixes []string) error {
+	for _, p := range prefixes {
+		if !prefixPattern.MatchString(p) {
+			return fmt.Errorf("%s: ticket_prefixes entry %q must be letters and digits, starting with a letter", section, p)
+		}
+	}
+	return nil
 }
 
 // For resolves the settings for repo. getenv expands $VARS and ~ in
 // gh_command and gh_env values.
 func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) {
 	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
-	if len(f.Defaults.Groups) > 0 {
-		return Settings{}, errors.New("groups belong in a repos.<owner/name> section, not in defaults")
-	}
 	sections := []RepoConfig{f.Defaults}
 	if rc, ok := f.repo(repo); ok {
 		sections = append(sections, rc)
@@ -128,6 +168,9 @@ func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) 
 		}
 		if rc.AutoGroups != nil {
 			s.AutoGroups = *rc.AutoGroups
+		}
+		if rc.TicketPrefixes != nil {
+			s.TicketPrefixes = rc.TicketPrefixes
 		}
 	}
 	if len(s.Command) == 0 {
