@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime/debug"
+	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/cli"
+	"github.com/sifatulrabbi/prledger/internal/core"
+	"github.com/sifatulrabbi/prledger/internal/gh"
+	"github.com/sifatulrabbi/prledger/internal/gitremote"
 )
 
 // version is set at release time with -ldflags "-X main.version=vX.Y.Z".
@@ -17,6 +22,15 @@ func main() {
 		Stdout:  os.Stdout,
 		Stderr:  os.Stderr,
 		Version: cli.ResolveVersion(version, info),
+		Now:     time.Now,
+		Runner:  gh.ExecRunner{},
+		DetectRepo: func(ctx context.Context) (core.Repo, error) {
+			dir, err := os.Getwd()
+			if err != nil {
+				return core.Repo{}, err
+			}
+			return gitremote.Origin(ctx, dir)
+		},
 	})
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "prledger:", err)
