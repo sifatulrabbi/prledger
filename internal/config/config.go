@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -32,6 +33,16 @@ type RepoConfig struct {
 	Author     string            `yaml:"author"`
 	Limit      int               `yaml:"limit"`
 	AutoGroups *bool             `yaml:"auto_groups"`
+	Groups     []GroupConfig     `yaml:"groups"`
+}
+
+// GroupConfig defines one group. A PR joins it if its number is in PRs, or
+// its branch or title matches the regular expression in Branch or Title.
+type GroupConfig struct {
+	Name   string `yaml:"name"`
+	PRs    []int  `yaml:"prs"`
+	Branch string `yaml:"branch"`
+	Title  string `yaml:"title"`
 }
 
 // Settings is the resolved configuration for one repo.
@@ -41,6 +52,7 @@ type Settings struct {
 	Author     string
 	Limit      int
 	AutoGroups bool
+	Groups     []core.GroupRule
 }
 
 // Command is how to start gh. In YAML it is either a string split on spaces
@@ -91,9 +103,17 @@ func Load(path string) (File, error) {
 // gh_command and gh_env values.
 func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) {
 	s := Settings{Command: []string{"gh"}, Env: map[string]string{}, Author: "@me", Limit: 1000, AutoGroups: true}
+	if len(f.Defaults.Groups) > 0 {
+		return Settings{}, errors.New("groups belong in a repos.<owner/name> section, not in defaults")
+	}
 	sections := []RepoConfig{f.Defaults}
 	if rc, ok := f.repo(repo); ok {
 		sections = append(sections, rc)
+		groups, err := compileGroups(rc.Groups)
+		if err != nil {
+			return Settings{}, fmt.Errorf("%s: %w", repo, err)
+		}
+		s.Groups = groups
 	}
 	for _, rc := range sections {
 		if rc.GhCommand != nil {
@@ -126,6 +146,40 @@ func (f File) For(repo core.Repo, getenv func(string) string) (Settings, error) 
 		s.Env[k] = expand(v, getenv, home)
 	}
 	return s, nil
+}
+
+func compileGroups(groups []GroupConfig) ([]core.GroupRule, error) {
+	var rules []core.GroupRule
+	seen := map[string]bool{}
+	for i, g := range groups {
+		if strings.TrimSpace(g.Name) == "" {
+			return nil, fmt.Errorf("group %d has no name", i+1)
+		}
+		if seen[g.Name] {
+			return nil, fmt.Errorf("group %q is defined twice", g.Name)
+		}
+		seen[g.Name] = true
+		if len(g.PRs) == 0 && g.Branch == "" && g.Title == "" {
+			return nil, fmt.Errorf("group %q needs prs, branch or title", g.Name)
+		}
+		rule := core.GroupRule{Name: g.Name, PRs: g.PRs}
+		var err error
+		if rule.Branch, err = compile(g.Branch); err != nil {
+			return nil, fmt.Errorf("group %q branch: %w", g.Name, err)
+		}
+		if rule.Title, err = compile(g.Title); err != nil {
+			return nil, fmt.Errorf("group %q title: %w", g.Name, err)
+		}
+		rules = append(rules, rule)
+	}
+	return rules, nil
+}
+
+func compile(pattern string) (*regexp.Regexp, error) {
+	if pattern == "" {
+		return nil, nil
+	}
+	return regexp.Compile(pattern)
 }
 
 // repo finds the section for r; GitHub owner and repo names are

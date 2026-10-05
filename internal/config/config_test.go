@@ -155,6 +155,70 @@ func TestEmptyGhCommandIsRejected(t *testing.T) {
 	}
 }
 
+func TestGroupsResolveToRules(t *testing.T) {
+	s := settingsFor(t, `
+repos:
+  octo/hello-world:
+    auto_groups: false
+    groups:
+      - name: Teams notifications
+        prs: [41, 42]
+        branch: "teams-"
+      - name: Docs
+        title: "(?i)^docs"
+`)
+	if s.AutoGroups {
+		t.Error("auto_groups: false was ignored")
+	}
+	if len(s.Groups) != 2 {
+		t.Fatalf("groups = %+v", s.Groups)
+	}
+	teams, docs := s.Groups[0], s.Groups[1]
+	if teams.Name != "Teams notifications" || !reflect.DeepEqual(teams.PRs, []int{41, 42}) ||
+		teams.Branch == nil || !teams.Branch.MatchString("alice/teams-dm") || teams.Title != nil {
+		t.Errorf("teams rule = %+v", teams)
+	}
+	if docs.Name != "Docs" || docs.Branch != nil || docs.Title == nil || !docs.Title.MatchString("Docs: readme") {
+		t.Errorf("docs rule = %+v", docs)
+	}
+}
+
+func TestBadGroupsAreReportedByName(t *testing.T) {
+	cases := map[string]string{
+		"invalid regex":    "    groups:\n      - {name: Broken, branch: \"(\"}\n",
+		"missing name":     "    groups:\n      - {prs: [1]}\n",
+		"nothing to match": "    groups:\n      - {name: Empty}\n",
+		"duplicate name":   "    groups:\n      - {name: Twice, prs: [1]}\n      - {name: Twice, prs: [2]}\n",
+	}
+	wantInErr := map[string]string{
+		"invalid regex":    `"Broken"`,
+		"missing name":     "name",
+		"nothing to match": `"Empty"`,
+		"duplicate name":   `"Twice"`,
+	}
+	for name, groups := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, err := Load(write(t, "repos:\n  octo/hello-world:\n"+groups))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.For(repo, env); err == nil || !strings.Contains(err.Error(), wantInErr[name]) {
+				t.Fatalf("err = %v, want it to mention %s", err, wantInErr[name])
+			}
+		})
+	}
+}
+
+func TestGroupsInDefaultsAreRejected(t *testing.T) {
+	f, err := Load(write(t, "defaults:\n  groups:\n    - {name: X, prs: [1]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.For(repo, env); err == nil || !strings.Contains(err.Error(), "repos.") {
+		t.Fatalf("err = %v, want a hint to move groups under repos", err)
+	}
+}
+
 func TestPathPrecedence(t *testing.T) {
 	cases := []struct {
 		name string

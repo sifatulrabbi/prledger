@@ -61,6 +61,25 @@ func TestConfigFlagOverridesTheDefaultPath(t *testing.T) {
 	}
 }
 
+func TestListShowsConfiguredGroups(t *testing.T) {
+	h := newHarness(t)
+	h.writeConfig(t, `
+repos:
+  octo/hello-world:
+    groups:
+      - {name: Login and search, prs: [10, 12]}
+`)
+	if err := h.run("list"); err != nil {
+		t.Fatal(err)
+	}
+	out := h.stdout.String()
+	grouped := strings.Index(out, "Login and search (2)")
+	ungrouped := strings.Index(out, "Ungrouped (2)")
+	if grouped < 0 || ungrouped < 0 || grouped > ungrouped {
+		t.Fatalf("table =\n%s\nwant the configured group before Ungrouped", out)
+	}
+}
+
 func TestListReportsABadConfig(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig(t, "defaults:\n  gh_comand: gh\n")

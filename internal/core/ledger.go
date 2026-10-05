@@ -32,8 +32,9 @@ const UngroupedName = "Ungrouped"
 
 // Ledger builds Snapshots from a PRSource.
 type Ledger struct {
-	Source PRSource
-	Now    func() time.Time
+	Source   PRSource
+	Now      func() time.Time
+	Grouping Grouping
 }
 
 // Snapshot fetches the PRs for q and arranges them into groups.
@@ -42,9 +43,9 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	groups := []Group{}
-	if len(prs) > 0 {
-		groups = append(groups, Group{Name: UngroupedName, PRs: newestFirst(prs)})
+	groups := l.Grouping.arrange(prs)
+	if groups == nil {
+		groups = []Group{} // JSON [] rather than null
 	}
 	return Snapshot{
 		Schema:    SchemaVersion,

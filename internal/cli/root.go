@@ -120,8 +120,9 @@ func resolveTarget(cmd *cobra.Command, d Deps, g *globalFlags) (target, error) {
 
 func (t target) ledger(d Deps) core.Ledger {
 	return core.Ledger{
-		Source: gh.Client{Runner: d.Runner, Command: t.settings.Command, Env: t.settings.Env},
-		Now:    d.Now,
+		Source:   gh.Client{Runner: d.Runner, Command: t.settings.Command, Env: t.settings.Env},
+		Now:      d.Now,
+		Grouping: core.Grouping{Rules: t.settings.Groups, Auto: t.settings.AutoGroups},
 	}
 }
 
