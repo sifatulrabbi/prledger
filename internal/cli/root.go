@@ -188,9 +188,19 @@ func (t target) tracker(life context.Context, d Deps) (*core.Tracker, error) {
 	return core.NewTracker(life, fetch, c), nil
 }
 
+// fetchMode says what a fresh fetch includes.
+type fetchMode int
+
+const (
+	withDetails fetchMode = iota // reviews, CI and merge state too
+	// listOnly skips the slow details call. Such a snapshot is not saved:
+	// it would replace a cached one that has details.
+	listOnly
+)
+
 // snapshotFor returns the cached snapshot, or fetches a fresh one through gh
 // and saves it to the cache.
-func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapshot, error) {
+func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool, mode fetchMode) (core.Snapshot, error) {
 	c, err := t.cache(d)
 	if err != nil {
 		return core.Snapshot{}, err
@@ -205,9 +215,17 @@ func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapsh
 		}
 		return snap, nil
 	}
-	snap, err := c.ledger.Snapshot(cmd.Context(), t.query())
+	ledger := c.ledger
+	ledger.SkipDetails = mode == listOnly
+	snap, err := ledger.Snapshot(cmd.Context(), t.query())
 	if err != nil {
 		return core.Snapshot{}, err
+	}
+	for _, w := range snap.Warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+	}
+	if mode == listOnly {
+		return snap, nil
 	}
 	if err := c.Save(snap); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not update the cache: %v\n", err)

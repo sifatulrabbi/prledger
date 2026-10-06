@@ -18,30 +18,39 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 // fakeGh stands in for the gh process. Without respond it answers
-// `gh repo view` with "main" and every other run with stdout/err; respond,
-// when set, answers every call, repo view included. It records the argv and
-// env of the last call other than repo view (the pr list call tests inspect).
+// `gh repo view` with "main", the open-PR details call with details (or []),
+// and every other run with stdout/err; respond, when set, answers every call.
+// It records the argv and env of the last call that is neither repo view nor
+// the details call (the pr list call tests inspect).
 type fakeGh struct {
-	stdout []byte
-	err    error
-	argv   []string
-	env    []string
+	stdout  []byte
+	details []byte
+	err     error
+	argv    []string
+	env     []string
 	// respond, when set, answers instead of stdout/err, e.g. per subcommand.
 	respond func(argv []string) ([]byte, error)
 }
 
 func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
 	repoView := slices.Contains(argv, "repo") && slices.Contains(argv, "view")
-	if !repoView {
+	details := hasPair(argv, "--state", "open")
+	if !repoView && !details {
 		f.argv, f.env = argv, env // the pr list call the tests inspect
 	}
-	if f.respond != nil {
+	switch {
+	case f.respond != nil:
 		return f.respond(argv)
-	}
-	if repoView && f.err == nil {
+	case f.err != nil:
+		return nil, f.err
+	case repoView:
 		return []byte("main\n"), nil // gh repo view … --jq .defaultBranchRef.name
+	case details && f.details != nil:
+		return f.details, nil
+	case details:
+		return []byte("[]"), nil
 	}
-	return f.stdout, f.err
+	return f.stdout, nil
 }
 
 type harness struct {
@@ -66,7 +75,11 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{gh: &fakeGh{stdout: fixture}}
+	details, err := os.ReadFile(filepath.Join("testdata", "gh-pr-details.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &harness{gh: &fakeGh{stdout: fixture, details: details}}
 	h.env = map[string]string{
 		"HOME":            "/home/alice",
 		"PRLEDGER_CONFIG": filepath.Join(t.TempDir(), "config.yaml"), // never the real one
@@ -148,6 +161,27 @@ func TestListReportsDetectionFailure(t *testing.T) {
 	h.deps.DetectRepo = func(context.Context) (core.Repo, error) { return core.Repo{}, errors.New("no origin remote") }
 	if err := h.run("list"); err == nil || !strings.Contains(err.Error(), "no origin remote") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// GitHub times out on the slow fields for busy repos; the list must survive.
+func TestListWarnsWhenDetailsFail(t *testing.T) {
+	h := newHarness(t)
+	list := h.gh.stdout
+	h.gh.respond = func(argv []string) ([]byte, error) {
+		switch {
+		case hasPair(argv, "--state", "open"):
+			return nil, errors.New("HTTP 504: Gateway Timeout")
+		case slices.Contains(argv, "view"):
+			return []byte("main\n"), nil
+		}
+		return list, nil
+	}
+	if err := h.run("list"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout.String(), "#12") || !strings.Contains(h.stderr.String(), "warning: Reviews, CI and merge state are not shown") || !strings.Contains(h.stderr.String(), "504") {
+		t.Fatalf("stdout:\n%s\nstderr:\n%s\nwant the PRs and a warning naming the failure", h.stdout.String(), h.stderr.String())
 	}
 }
 

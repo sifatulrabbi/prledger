@@ -23,7 +23,7 @@ func newListCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snap, err := snapshotFor(cmd, t, d, cached)
+			snap, err := snapshotFor(cmd, t, d, cached, withDetails)
 			if err != nil {
 				return err
 			}
@@ -65,13 +65,33 @@ func writeTable(w io.Writer, snap core.Snapshot) error {
 				// Indent stacked PRs under the PR they sit on.
 				title = strings.Repeat("  ", g.Stack.Entries[i].Depth-1) + "└ " + title
 			}
-			fmt.Fprintf(tw, "  #%d\t%s\t%s\t%s\n", pr.Number, pr.Status, title, pr.Branch)
+			fmt.Fprintf(tw, "  #%d\t%s\t%s\t%s\t%s\n", pr.Number, pr.Status, title, pr.Branch, signals(pr))
 		}
 		if err := tw.Flush(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+var (
+	checkWords  = map[core.CheckState]string{core.CheckPass: "ci ✓", core.CheckFail: "ci ✗", core.CheckPending: "ci …"}
+	reviewWords = map[core.Review]string{core.ReviewApproved: "approved", core.ReviewChanges: "changes requested", core.ReviewRequired: "review needed"}
+	mergeWords  = map[core.Merge]string{core.MergeConflicting: "conflicts", core.MergeBehind: "behind base"}
+)
+
+// signals sums up an open PR's CI, review and merge state in a few words.
+func signals(pr core.PR) string {
+	var words []string
+	if pr.Checks != nil {
+		words = append(words, checkWords[pr.Checks.State])
+	}
+	for _, w := range []string{reviewWords[pr.Review], mergeWords[pr.Merge]} {
+		if w != "" {
+			words = append(words, w)
+		}
+	}
+	return strings.Join(words, " · ")
 }
 
 func truncate(s string, n int) string {

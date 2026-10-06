@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,6 +30,37 @@ func TestGroupsSuggestPrintsPasteableYAML(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden(t, "groups-suggest.golden.yaml", h.stdout.Bytes())
+}
+
+// Suggesting groups needs titles and branches only: it must not pay for the
+// slow details call, nor replace the cache with a snapshot that lacks them.
+func TestGroupsSuggestSkipsDetailsAndKeepsTheCache(t *testing.T) {
+	h := linkedHarness(t)
+	h.gh.details = []byte(`[{"number":26,"statusCheckRollup":[{"status":"COMPLETED","conclusion":"SUCCESS"}]}]`)
+	if err := h.run("list"); err != nil { // fills the cache, details included
+		t.Fatal(err)
+	}
+	list := h.gh.stdout
+	h.gh.respond = func(argv []string) ([]byte, error) {
+		switch {
+		case hasPair(argv, "--state", "open"):
+			t.Errorf("groups suggest asked gh for details: %q", argv)
+			return []byte("[]"), nil
+		case slices.Contains(argv, "view"):
+			return []byte("main\n"), nil
+		}
+		return list, nil
+	}
+	if err := h.run("groups", "suggest"); err != nil {
+		t.Fatal(err)
+	}
+	h.stdout.Reset()
+	if err := h.run("list", "--cached", "--json"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.stdout.String(), `"checks"`) {
+		t.Fatalf("cache lost its details after groups suggest:\n%s", h.stdout.String())
+	}
 }
 
 // Pasting the suggestion into the config reproduces the suggested groups.

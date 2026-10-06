@@ -3,6 +3,7 @@
 package gh
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,12 @@ type Client struct {
 	Env     map[string]string // extra environment for gh
 }
 
-const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt"
+// prFields are cheap for GitHub to answer even for hundreds of PRs.
+const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,author,labels,assignees"
+
+// detailFields are not: asking for them across every PR of a busy repo makes
+// GitHub time out (HTTP 502/504), so OpenDetails asks for open PRs only.
+const detailFields = "number,reviewDecision,reviewRequests,reviews,statusCheckRollup,mergeable,mergeStateStatus"
 
 type ghPR struct {
 	Number      int        `json:"number"`
@@ -42,6 +48,41 @@ type ghPR struct {
 	CreatedAt   time.Time  `json:"createdAt"`
 	MergedAt    *time.Time `json:"mergedAt"`
 	ClosedAt    *time.Time `json:"closedAt"`
+	Labels      []struct {
+		Name        string `json:"name"`
+		Color       string `json:"color"`
+		Description string `json:"description"`
+	} `json:"labels"`
+	Author    ghUser   `json:"author"`
+	Assignees []ghUser `json:"assignees"`
+}
+
+type ghUser struct {
+	Login string `json:"login"`
+}
+
+type ghDetails struct {
+	Number         int    `json:"number"`
+	ReviewDecision string `json:"reviewDecision"`
+	ReviewRequests []struct {
+		Login string `json:"login"` // users and bots
+		Slug  string `json:"slug"`  // teams, as "org/team"
+		Name  string `json:"name"`
+	} `json:"reviewRequests"`
+	Reviews           []ghReview `json:"reviews"`
+	StatusCheckRollup []struct {
+		Status     string `json:"status"`     // check runs
+		Conclusion string `json:"conclusion"` // check runs, once completed
+		State      string `json:"state"`      // commit statuses
+	} `json:"statusCheckRollup"`
+	Mergeable        string `json:"mergeable"`
+	MergeStateStatus string `json:"mergeStateStatus"`
+}
+
+type ghReview struct {
+	Author      ghUser    `json:"author"`
+	State       string    `json:"state"`
+	SubmittedAt time.Time `json:"submittedAt"`
 }
 
 // Exec runs gh with args and returns its stdout.
@@ -76,23 +117,30 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// ListPRs runs `gh pr list` for every state and maps the result.
-func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
-	out, err := c.Exec(ctx,
+// list runs `gh pr list` for q in one state and decodes the JSON into out.
+func (c Client) list(ctx context.Context, q core.Query, state, fields string, out any) error {
+	raw, err := c.Exec(ctx,
 		"pr", "list",
 		"--repo", q.Repo.String(),
 		"--author", q.Author,
-		"--state", "all",
+		"--state", state,
 		"--limit", strconv.Itoa(q.Limit),
-		"--json", prFields,
+		"--json", fields,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("listing pull requests with gh: %w", err)
+		return err
 	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("reading gh pr list output: %w", err)
+	}
+	return nil
+}
 
+// ListPRs runs `gh pr list` for every state and maps the result.
+func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 	var raw []ghPR
-	if err := json.Unmarshal(out, &raw); err != nil {
-		return nil, fmt.Errorf("reading gh pr list output: %w", err)
+	if err := c.list(ctx, q, "all", prFields, &raw); err != nil {
+		return nil, fmt.Errorf("listing pull requests with gh: %w", err)
 	}
 	prs := make([]core.PR, 0, len(raw))
 	for _, r := range raw {
@@ -100,7 +148,7 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 		if err != nil {
 			return nil, fmt.Errorf("PR #%d: %w", r.Number, err)
 		}
-		prs = append(prs, core.PR{
+		p := core.PR{
 			Number:    r.Number,
 			Title:     r.Title,
 			Branch:    r.HeadRefName,
@@ -110,9 +158,124 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 			CreatedAt: r.CreatedAt,
 			MergedAt:  r.MergedAt,
 			ClosedAt:  r.ClosedAt,
-		})
+			Author:    r.Author.Login,
+		}
+		for _, l := range r.Labels {
+			p.Labels = append(p.Labels, core.Label{Name: l.Name, Color: l.Color, Description: l.Description})
+		}
+		for _, a := range r.Assignees {
+			p.Assignees = append(p.Assignees, a.Login)
+		}
+		prs = append(prs, p)
 	}
 	return prs, nil
+}
+
+// OpenDetails runs `gh pr list` for open PRs with the slow fields.
+func (c Client) OpenDetails(ctx context.Context, q core.Query) ([]core.Details, error) {
+	var raw []ghDetails
+	if err := c.list(ctx, q, "open", detailFields, &raw); err != nil {
+		return nil, fmt.Errorf("reading reviews and checks with gh: %w", err)
+	}
+	out := make([]core.Details, 0, len(raw))
+	for _, r := range raw {
+		d := core.Details{
+			Number:   r.Number,
+			Decision: reviewDecision[r.ReviewDecision],
+			Merge:    mergeState(r.Mergeable, r.MergeStateStatus),
+		}
+		for _, rr := range r.ReviewRequests {
+			if who := cmp.Or(rr.Login, rr.Slug, rr.Name); who != "" {
+				d.Requested = append(d.Requested, who)
+			}
+		}
+		d.Reviews = opinions(r.Reviews)
+		var checks []core.CheckState
+		for _, ch := range r.StatusCheckRollup {
+			checks = append(checks, checkState(ch.Status, ch.Conclusion, ch.State))
+		}
+		d.Checks = core.SummarizeChecks(checks)
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+var reviewDecision = map[string]core.Review{
+	"APPROVED":          core.ReviewApproved,
+	"CHANGES_REQUESTED": core.ReviewChanges,
+	"REVIEW_REQUIRED":   core.ReviewRequired,
+}
+
+// opinions gives each reviewer's latest approval or change request, oldest
+// first. It reads every review rather than gh's latestReviews, whose entry
+// per reviewer is their last review of any kind: a comment after an
+// approval would hide the approval. Comment-only reviews take no stand (and
+// bots such as github-actions leave one on most PRs); a dismissal takes the
+// reviewer's stand back.
+func opinions(reviews []ghReview) []core.Reviewer {
+	reviews = slices.Clone(reviews)
+	slices.SortStableFunc(reviews, func(a, b ghReview) int { return a.SubmittedAt.Compare(b.SubmittedAt) })
+	var out []core.Reviewer
+	for _, rv := range reviews {
+		login := rv.Author.Login
+		var s core.ReviewerState
+		switch rv.State {
+		case "APPROVED":
+			s = core.ReviewerApproved
+		case "CHANGES_REQUESTED":
+			s = core.ReviewerChanges
+		case "DISMISSED":
+		default:
+			continue // COMMENTED, PENDING
+		}
+		if login == "" {
+			continue
+		}
+		out = slices.DeleteFunc(out, func(r core.Reviewer) bool { return r.Login == login })
+		if s != "" {
+			out = append(out, core.Reviewer{Login: login, State: s})
+		}
+	}
+	return out
+}
+
+// checkState reads one statusCheckRollup entry: a check run (status and
+// conclusion) or a commit status (state).
+func checkState(status, conclusion, state string) core.CheckState {
+	if state != "" { // commit status
+		switch state {
+		case "SUCCESS":
+			return core.CheckPass
+		case "PENDING", "EXPECTED":
+			return core.CheckPending
+		}
+		return core.CheckFail // FAILURE, ERROR
+	}
+	if status != "COMPLETED" {
+		return core.CheckPending // QUEUED, IN_PROGRESS, WAITING, …
+	}
+	switch conclusion {
+	case "SUCCESS", "NEUTRAL", "SKIPPED":
+		return core.CheckPass
+	}
+	return core.CheckFail // FAILURE, CANCELLED, TIMED_OUT, ACTION_REQUIRED, STALE, …
+}
+
+// mergeState reads GitHub's mergeable and mergeStateStatus. Either can be
+// UNKNOWN while GitHub works it out; then it is "".
+func mergeState(mergeable, status string) core.Merge {
+	if mergeable == "CONFLICTING" || status == "DIRTY" {
+		return core.MergeConflicting
+	}
+	switch status {
+	case "CLEAN", "UNSTABLE", "HAS_HOOKS": // UNSTABLE: only optional checks fail
+		return core.MergeClean
+	case "BEHIND":
+		return core.MergeBehind
+	case "BLOCKED":
+		return core.MergeBlocked
+	}
+	return ""
 }
 
 // DefaultBranch asks gh for the repo's default branch.

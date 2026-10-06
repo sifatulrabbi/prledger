@@ -3,6 +3,7 @@ package core_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,26 @@ type fakeSource struct {
 	query         core.Query
 	defaultBranch string // "main" when empty
 	branchErr     error
+	details       []core.Details
+	detailsErr    error
+	detailsCalls  int
+	// detailsFailures, when set, limits detailsErr to the first calls.
+	detailsFailures int
+	// detailsFn, when set, answers OpenDetails instead.
+	detailsFn func(ctx context.Context) ([]core.Details, error)
+}
+
+// OpenDetails fails with detailsErr; with detailsFailures set, only that many
+// times and then answers details.
+func (f *fakeSource) OpenDetails(ctx context.Context, _ core.Query) ([]core.Details, error) {
+	f.detailsCalls++
+	if f.detailsFn != nil {
+		return f.detailsFn(ctx)
+	}
+	if f.detailsErr != nil && (f.detailsFailures == 0 || f.detailsCalls <= f.detailsFailures) {
+		return nil, f.detailsErr
+	}
+	return f.details, nil
 }
 
 func (f *fakeSource) ListPRs(_ context.Context, q core.Query) ([]core.PR, error) {
@@ -44,6 +65,9 @@ func TestAnUnknownDefaultBranchStillGivesASnapshot(t *testing.T) {
 	snap, err := core.Ledger{Source: &fakeSource{prs: []core.PR{a, b}, branchErr: errors.New("gh: repo view failed")}, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
 	if err != nil || snap.DefaultBranch != "" || len(snap.Groups) != 1 || snap.Groups[0].Stack == nil {
 		t.Fatalf("snap = %+v, err %v; want the stack without a default branch", snap, err)
+	}
+	if len(snap.Warnings) != 1 || !strings.Contains(snap.Warnings[0], "repo view failed") {
+		t.Fatalf("Warnings = %q, want the default branch failure named", snap.Warnings)
 	}
 }
 

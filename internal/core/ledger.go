@@ -3,6 +3,7 @@ package core
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"slices"
 	"time"
 )
@@ -19,7 +20,10 @@ type Snapshot struct {
 	Author        string    `json:"author"`
 	DefaultBranch string    `json:"defaultBranch,omitempty"` // "" in snapshots from before stacks
 	FetchedAt     time.Time `json:"fetchedAt"`
-	Groups        []Group   `json:"groups"`
+	// Warnings name the extras gh could not give (default branch, reviews,
+	// CI); the PRs are complete without them.
+	Warnings []string `json:"warnings,omitempty"`
+	Groups   []Group  `json:"groups"`
 }
 
 // Group is a named set of PRs that belong to one piece of work.
@@ -37,7 +41,16 @@ type Ledger struct {
 	Source   PRSource
 	Now      func() time.Time
 	Grouping Grouping
+	// SkipDetails leaves out reviews, CI and merge state (and their slow
+	// call), for callers that only need titles and branches.
+	SkipDetails bool
+	// DetailsTimeout bounds each try of the details call; 0 means
+	// DefaultDetailsTimeout. Two tries fit in serve's DefaultFetchTimeout.
+	DetailsTimeout time.Duration
 }
+
+// DefaultDetailsTimeout is how long one try of the details call may take.
+const DefaultDetailsTimeout = 40 * time.Second
 
 // Snapshot fetches the PRs for q and arranges them into groups.
 func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
@@ -45,11 +58,22 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	var warnings []string
 	// Without the default branch only shared-base stacks are lost, so a
 	// failure here does not fail the snapshot.
 	base, err := l.Source.DefaultBranch(ctx, q.Repo)
 	if err != nil {
 		base = ""
+		warnings = append(warnings, "Stacks on shared branches are not shown: "+err.Error())
+	}
+	if !l.SkipDetails {
+		prs, err = l.withDetails(ctx, q, prs)
+		if ctx.Err() != nil {
+			return Snapshot{}, ctx.Err() // cancelled: no half snapshot for the cache
+		}
+		if err != nil {
+			warnings = append(warnings, "Reviews, CI and merge state are not shown: "+err.Error())
+		}
 	}
 	return Snapshot{
 		Schema:        SchemaVersion,
@@ -57,8 +81,51 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 		Author:        q.Author,
 		DefaultBranch: base,
 		FetchedAt:     l.Now().UTC(),
+		Warnings:      warnings,
 		Groups:        orEmpty(l.Grouping.arrange(prs, base)),
 	}, nil
+}
+
+// withDetails adds the open PRs' details to prs. It skips the call when no
+// PR is open, and on failure returns prs unchanged with the error.
+func (l Ledger) withDetails(ctx context.Context, q Query, prs []PR) ([]PR, error) {
+	if !slices.ContainsFunc(prs, func(p PR) bool { return p.Status == StatusOpen || p.Status == StatusDraft }) {
+		return prs, nil
+	}
+	details, err := l.tryDetails(ctx, q)
+	if err != nil && ctx.Err() == nil {
+		// GitHub sometimes cuts this slow response short; a second try
+		// usually works.
+		details, err = l.tryDetails(ctx, q)
+	}
+	if err != nil {
+		return prs, err
+	}
+	byNumber := make(map[int]Details, len(details))
+	for _, d := range details {
+		byNumber[d.Number] = d
+	}
+	out := make([]PR, len(prs))
+	for i, p := range prs {
+		if d, ok := byNumber[p.Number]; ok {
+			p = d.apply(p)
+		}
+		out[i] = p
+	}
+	return out, nil
+}
+
+// tryDetails runs one details call in its own time, so a hung call cannot use
+// up the whole fetch's time and leave none for a second try.
+func (l Ledger) tryDetails(ctx context.Context, q Query) ([]Details, error) {
+	limit := cmp.Or(l.DetailsTimeout, DefaultDetailsTimeout)
+	tctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	details, err := l.Source.OpenDetails(tctx, q)
+	if err != nil && ctx.Err() == nil && tctx.Err() != nil {
+		return nil, fmt.Errorf("gh took longer than %s", limit)
+	}
+	return details, err
 }
 
 // Regroup re-arranges a snapshot's PRs with the Ledger's grouping, e.g. a

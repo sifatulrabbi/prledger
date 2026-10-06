@@ -36,7 +36,7 @@ func TestListPRsRunsGhPrList(t *testing.T) {
 	wantArgv := []string{
 		"env", "GH_CONFIG_DIR=/tmp/gh", "gh",
 		"pr", "list", "--repo", "octo/hello-world", "--author", "@me", "--state", "all", "--limit", "500",
-		"--json", "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt",
+		"--json", "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,author,labels,assignees",
 	}
 	if !reflect.DeepEqual(r.argv, wantArgv) {
 		t.Errorf("argv =\n%q\nwant\n%q", r.argv, wantArgv)
@@ -66,6 +66,116 @@ func TestListPRsMapsGhJSON(t *testing.T) {
 	}
 	if !reflect.DeepEqual(prs, want) {
 		t.Fatalf("prs =\n%+v\nwant\n%+v", prs, want)
+	}
+}
+
+func TestListPRsMapsLabelsAssigneesAndAuthor(t *testing.T) {
+	r := &fakeRunner{stdout: `[{"number":5,"state":"OPEN","createdAt":"2026-01-01T10:00:00Z",
+	  "author":{"id":"U_1","login":"alice","name":"Alice","is_bot":false},
+	  "labels":[{"id":"LA_1","name":"bug","description":"Something is broken","color":"d73a4a"}],
+	  "assignees":[{"id":"U_1","login":"alice","name":"Alice"},{"id":"U_2","login":"bob","name":""}]}]`}
+	prs, err := Client{Runner: r, Command: []string{"gh"}}.ListPRs(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []core.Label{{Name: "bug", Color: "d73a4a", Description: "Something is broken"}}; !reflect.DeepEqual(prs[0].Labels, want) {
+		t.Errorf("Labels = %+v, want %+v", prs[0].Labels, want)
+	}
+	if want := []string{"alice", "bob"}; !reflect.DeepEqual(prs[0].Assignees, want) {
+		t.Errorf("Assignees = %q, want %q", prs[0].Assignees, want)
+	}
+	if prs[0].Author != "alice" {
+		t.Errorf("Author = %q, want alice", prs[0].Author)
+	}
+}
+
+func TestOpenDetailsAsksForOpenPRsOnly(t *testing.T) {
+	r := &fakeRunner{stdout: "[]"}
+	if _, err := (Client{Runner: r, Command: []string{"gh"}}).OpenDetails(context.Background(), query); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"gh", "pr", "list", "--repo", "octo/hello-world", "--author", "@me", "--state", "open", "--limit", "500",
+		"--json", "number,reviewDecision,reviewRequests,reviews,statusCheckRollup,mergeable,mergeStateStatus",
+	}
+	if !reflect.DeepEqual(r.argv, want) {
+		t.Fatalf("argv =\n%q\nwant\n%q", r.argv, want)
+	}
+}
+
+// The shapes below are what gh 2.x prints for these fields.
+func TestOpenDetailsMapsReviewsChecksAndMergeState(t *testing.T) {
+	r := &fakeRunner{stdout: `[{
+	  "number": 7,
+	  "reviewDecision": "CHANGES_REQUESTED", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
+	  "reviewRequests": [{"__typename": "User", "login": "carol"}, {"__typename": "Team", "name": "Backend", "slug": "octo/backend"}],
+	  "reviews": [
+	    {"author": {"login": "dan"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-03-02T10:00:00Z"},
+	    {"author": {"login": "bob"}, "state": "APPROVED", "submittedAt": "2026-03-01T10:00:00Z"},
+	    {"author": {"login": "bob"}, "state": "COMMENTED", "submittedAt": "2026-03-05T10:00:00Z"},
+	    {"author": {"login": "erin"}, "state": "APPROVED", "submittedAt": "2026-02-28T10:00:00Z"},
+	    {"author": {"login": "erin"}, "state": "DISMISSED", "submittedAt": "2026-03-03T10:00:00Z"},
+	    {"author": {"login": "github-actions"}, "state": "COMMENTED", "submittedAt": "2026-03-04T10:00:00Z"}
+	  ],
+	  "statusCheckRollup": [
+	    {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"},
+	    {"__typename": "CheckRun", "name": "lint", "status": "COMPLETED", "conclusion": "SKIPPED"},
+	    {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "FAILURE"},
+	    {"__typename": "CheckRun", "name": "e2e", "status": "IN_PROGRESS", "conclusion": ""},
+	    {"__typename": "StatusContext", "context": "ci/legacy", "state": "PENDING"},
+	    {"__typename": "StatusContext", "context": "deploy", "state": "ERROR"}
+	  ]
+	}]`}
+	got, err := Client{Runner: r, Command: []string{"gh"}}.OpenDetails(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []core.Details{{
+		Number:    7,
+		Decision:  core.ReviewChanges,
+		Requested: []string{"carol", "octo/backend"},
+		// Each reviewer's latest approval or change request, oldest first: a
+		// later comment does not undo bob's approval (latestReviews would
+		// lose it), erin's approval was dismissed, comments alone say nothing.
+		Reviews: []core.Reviewer{
+			{Login: "bob", State: core.ReviewerApproved},
+			{Login: "dan", State: core.ReviewerChanges},
+		},
+		Checks: &core.Checks{State: core.CheckFail, Passed: 2, Failed: 2, Pending: 2},
+		Merge:  core.MergeConflicting,
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("details =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+func TestMergeState(t *testing.T) {
+	tests := []struct {
+		mergeable, status string
+		want              core.Merge
+	}{
+		{"MERGEABLE", "CLEAN", core.MergeClean},
+		{"MERGEABLE", "UNSTABLE", core.MergeClean}, // only optional checks fail
+		{"MERGEABLE", "HAS_HOOKS", core.MergeClean},
+		{"MERGEABLE", "BEHIND", core.MergeBehind},
+		{"MERGEABLE", "BLOCKED", core.MergeBlocked},
+		{"CONFLICTING", "UNKNOWN", core.MergeConflicting},
+		{"UNKNOWN", "DIRTY", core.MergeConflicting},
+		{"MERGEABLE", "DRAFT", ""},
+		{"UNKNOWN", "UNKNOWN", ""},
+	}
+	for _, tt := range tests {
+		if got := mergeState(tt.mergeable, tt.status); got != tt.want {
+			t.Errorf("mergeState(%s, %s) = %q, want %q", tt.mergeable, tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestOpenDetailsWrapsGhFailure(t *testing.T) {
+	r := &fakeRunner{err: errors.New("HTTP 504: Gateway Timeout")}
+	_, err := Client{Runner: r, Command: []string{"gh"}}.OpenDetails(context.Background(), query)
+	if err == nil || !strings.Contains(err.Error(), "504") {
+		t.Fatalf("err = %v, want gh's message kept", err)
 	}
 }
 
