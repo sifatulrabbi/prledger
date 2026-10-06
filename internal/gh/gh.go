@@ -35,7 +35,7 @@ const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,created
 
 // detailFields are not: asking for them across every PR of a busy repo makes
 // GitHub time out (HTTP 502/504), so OpenDetails asks for open PRs only.
-const detailFields = "number,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus"
+const detailFields = "number,reviewDecision,reviewRequests,reviews,statusCheckRollup,mergeable,mergeStateStatus"
 
 type ghPR struct {
 	Number      int        `json:"number"`
@@ -69,7 +69,7 @@ type ghDetails struct {
 		Slug  string `json:"slug"`  // teams, as "org/team"
 		Name  string `json:"name"`
 	} `json:"reviewRequests"`
-	LatestReviews     []ghReview `json:"latestReviews"`
+	Reviews           []ghReview `json:"reviews"`
 	StatusCheckRollup []struct {
 		Status     string `json:"status"`     // check runs
 		Conclusion string `json:"conclusion"` // check runs, once completed
@@ -189,13 +189,7 @@ func (c Client) OpenDetails(ctx context.Context, q core.Query) ([]core.Details, 
 				d.Requested = append(d.Requested, who)
 			}
 		}
-		reviews := slices.Clone(r.LatestReviews)
-		slices.SortStableFunc(reviews, func(a, b ghReview) int { return a.SubmittedAt.Compare(b.SubmittedAt) })
-		for _, rv := range reviews {
-			if s, ok := reviewerState[rv.State]; ok && rv.Author.Login != "" {
-				d.Reviews = append(d.Reviews, core.Reviewer{Login: rv.Author.Login, State: s})
-			}
-		}
+		d.Reviews = opinions(r.Reviews)
 		var checks []core.CheckState
 		for _, ch := range r.StatusCheckRollup {
 			checks = append(checks, checkState(ch.Status, ch.Conclusion, ch.State))
@@ -212,12 +206,37 @@ var reviewDecision = map[string]core.Review{
 	"REVIEW_REQUIRED":   core.ReviewRequired,
 }
 
-// reviewerState maps the review states that take a stand. Comment-only
-// reviews do not (and bots such as github-actions leave one on most PRs);
-// dismissed and unsubmitted (PENDING) reviews say nothing either.
-var reviewerState = map[string]core.ReviewerState{
-	"APPROVED":          core.ReviewerApproved,
-	"CHANGES_REQUESTED": core.ReviewerChanges,
+// opinions gives each reviewer's latest approval or change request, oldest
+// first. It reads every review rather than gh's latestReviews, whose entry
+// per reviewer is their last review of any kind: a comment after an
+// approval would hide the approval. Comment-only reviews take no stand (and
+// bots such as github-actions leave one on most PRs); a dismissal takes the
+// reviewer's stand back.
+func opinions(reviews []ghReview) []core.Reviewer {
+	reviews = slices.Clone(reviews)
+	slices.SortStableFunc(reviews, func(a, b ghReview) int { return a.SubmittedAt.Compare(b.SubmittedAt) })
+	var out []core.Reviewer
+	for _, rv := range reviews {
+		login := rv.Author.Login
+		var s core.ReviewerState
+		switch rv.State {
+		case "APPROVED":
+			s = core.ReviewerApproved
+		case "CHANGES_REQUESTED":
+			s = core.ReviewerChanges
+		case "DISMISSED":
+		default:
+			continue // COMMENTED, PENDING
+		}
+		if login == "" {
+			continue
+		}
+		out = slices.DeleteFunc(out, func(r core.Reviewer) bool { return r.Login == login })
+		if s != "" {
+			out = append(out, core.Reviewer{Login: login, State: s})
+		}
+	}
+	return out
 }
 
 // checkState reads one statusCheckRollup entry: a check run (status and

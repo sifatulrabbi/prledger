@@ -23,7 +23,7 @@ func newListCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snap, err := snapshotFor(cmd, t, d, cached)
+			snap, err := snapshotFor(cmd, t, d, cached, withDetails)
 			if err != nil {
 				return err
 			}

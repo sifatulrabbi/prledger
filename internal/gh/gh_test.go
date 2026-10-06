@@ -96,7 +96,7 @@ func TestOpenDetailsAsksForOpenPRsOnly(t *testing.T) {
 	}
 	want := []string{
 		"gh", "pr", "list", "--repo", "octo/hello-world", "--author", "@me", "--state", "open", "--limit", "500",
-		"--json", "number,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus",
+		"--json", "number,reviewDecision,reviewRequests,reviews,statusCheckRollup,mergeable,mergeStateStatus",
 	}
 	if !reflect.DeepEqual(r.argv, want) {
 		t.Fatalf("argv =\n%q\nwant\n%q", r.argv, want)
@@ -109,9 +109,11 @@ func TestOpenDetailsMapsReviewsChecksAndMergeState(t *testing.T) {
 	  "number": 7,
 	  "reviewDecision": "CHANGES_REQUESTED", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
 	  "reviewRequests": [{"__typename": "User", "login": "carol"}, {"__typename": "Team", "name": "Backend", "slug": "octo/backend"}],
-	  "latestReviews": [
+	  "reviews": [
 	    {"author": {"login": "dan"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-03-02T10:00:00Z"},
 	    {"author": {"login": "bob"}, "state": "APPROVED", "submittedAt": "2026-03-01T10:00:00Z"},
+	    {"author": {"login": "bob"}, "state": "COMMENTED", "submittedAt": "2026-03-05T10:00:00Z"},
+	    {"author": {"login": "erin"}, "state": "APPROVED", "submittedAt": "2026-02-28T10:00:00Z"},
 	    {"author": {"login": "erin"}, "state": "DISMISSED", "submittedAt": "2026-03-03T10:00:00Z"},
 	    {"author": {"login": "github-actions"}, "state": "COMMENTED", "submittedAt": "2026-03-04T10:00:00Z"}
 	  ],
@@ -132,7 +134,10 @@ func TestOpenDetailsMapsReviewsChecksAndMergeState(t *testing.T) {
 		Number:    7,
 		Decision:  core.ReviewChanges,
 		Requested: []string{"carol", "octo/backend"},
-		Reviews: []core.Reviewer{ // oldest first; dismissed and comment-only reviews dropped
+		// Each reviewer's latest approval or change request, oldest first: a
+		// later comment does not undo bob's approval (latestReviews would
+		// lose it), erin's approval was dismissed, comments alone say nothing.
+		Reviews: []core.Reviewer{
 			{Login: "bob", State: core.ReviewerApproved},
 			{Login: "dan", State: core.ReviewerChanges},
 		},

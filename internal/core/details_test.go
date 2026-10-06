@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sifatulrabbi/prledger/internal/core"
 )
@@ -75,6 +76,10 @@ func TestReviewState(t *testing.T) {
 		{"no rule: an approval approves", core.Details{Reviews: []core.Reviewer{approved}}, core.ReviewApproved},
 		{"no rule: changes requested beat approvals", core.Details{Reviews: []core.Reviewer{approved, changes}}, core.ReviewChanges},
 		{"no rule: a pending request needs review", core.Details{Requested: []string{"dan"}}, core.ReviewRequired},
+		// GitHub keeps CHANGES_REQUESTED until that reviewer approves; once
+		// the author asked them again, the PR waits on them.
+		{"changes requested, then asked again", core.Details{Decision: core.ReviewChanges, Reviews: []core.Reviewer{approved, changes}, Requested: []string{"carol"}}, core.ReviewRequired},
+		{"changes requested, one of two asked again", core.Details{Decision: core.ReviewChanges, Reviews: []core.Reviewer{changes, {Login: "erin", State: core.ReviewerChanges}}, Requested: []string{"carol"}}, core.ReviewChanges},
 		{"no rule and no reviewers", core.Details{}, ""},
 	}
 	for _, tt := range tests {
@@ -154,13 +159,39 @@ func TestDetailsAreRetriedOnce(t *testing.T) {
 	}
 }
 
-func TestDetailsAreNotRetriedAfterCancel(t *testing.T) {
+// Regression: Ctrl-C while the details call ran gave a "successful"
+// snapshot without details, which list printed and the cache kept.
+func TestCancelDuringDetailsFailsTheSnapshot(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	src := &fakeSource{prs: []core.PR{openPR}, detailsErr: context.Canceled}
-	_, _ = core.Ledger{Source: src, Now: clock}.Snapshot(ctx, core.Query{Repo: repo})
-	if src.detailsCalls != 1 {
-		t.Fatalf("details calls = %d after cancel, want 1", src.detailsCalls)
+	src := &fakeSource{prs: []core.PR{openPR}, detailsFn: func(ctx context.Context) ([]core.Details, error) {
+		cancel() // Ctrl-C while gh runs
+		return nil, errors.New("gh: signal: killed")
+	}}
+	_, err := core.Ledger{Source: src, Now: clock}.Snapshot(ctx, core.Query{Repo: repo})
+	if !errors.Is(err, context.Canceled) || src.detailsCalls != 1 {
+		t.Fatalf("err = %v after %d calls, want context.Canceled after 1", err, src.detailsCalls)
+	}
+}
+
+// A details call that hangs runs out its own time, not the whole fetch's,
+// and is tried again in fresh time.
+func TestSlowDetailsTimeOutIntoAWarning(t *testing.T) {
+	src := &fakeSource{prs: []core.PR{openPR}, detailsFn: func(ctx context.Context) ([]core.Details, error) {
+		<-ctx.Done()
+		return nil, errors.New("gh: signal: killed")
+	}}
+	l := core.Ledger{Source: src, Now: clock, DetailsTimeout: 10 * time.Millisecond}
+	snap, err := l.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || src.detailsCalls != 2 || len(snap.Warnings) != 1 || !strings.Contains(snap.Warnings[0], "took longer than") {
+		t.Fatalf("err %v, calls %d, warnings %q; want two timed-out tries and a warning", err, src.detailsCalls, snap.Warnings)
+	}
+}
+
+func TestSkipDetailsMakesNoDetailsCall(t *testing.T) {
+	src := &fakeSource{prs: []core.PR{openPR}, detailsErr: errors.New("must not be called")}
+	snap, err := core.Ledger{Source: src, Now: clock, SkipDetails: true}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || src.detailsCalls != 0 || len(snap.Warnings) != 0 {
+		t.Fatalf("details calls = %d, warnings %q, err %v", src.detailsCalls, snap.Warnings, err)
 	}
 }
 

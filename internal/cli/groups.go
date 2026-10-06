@@ -28,7 +28,7 @@ func newGroupsCmd(d Deps, g *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			snap, err := snapshotFor(cmd, t, d, cached)
+			snap, err := snapshotFor(cmd, t, d, cached, listOnly) // groups need titles and branches only
 			if err != nil {
 				return err
 			}

@@ -84,6 +84,7 @@ summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhe
 .sig { display: grid; gap: 4px; align-content: start; justify-items: end; font-size: 12.5px; white-space: nowrap; }
 .s { color: var(--k, var(--muted)); font-variant-numeric: tabular-nums; }
 .empty { color: var(--muted); padding-block: 24px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 [data-s="open"] { --c: var(--open); } [data-s="draft"] { --c: var(--draft); }
 [data-s="merged"] { --c: var(--merged); } [data-s="closed"] { --c: var(--closed); }
@@ -238,7 +239,10 @@ function people(p) {
   };
   names("review", p.reviewers || [], r => {
     const [glyph, said] = REVIEWER[r.state] || ["", r.state];
-    const b = el("b", null, `${r.login} ${glyph}`);
+    const b = el("b", null, r.login + " ");
+    const g = el("span", null, glyph);
+    g.setAttribute("aria-hidden", "true");
+    b.append(g, el("span", "sr", ` (${said})`)); // screen readers say the words, not "check mark"
     b.title = `${r.login}: ${said}`;
     return b;
   });
@@ -263,7 +267,8 @@ function card(p, depth, where) {
   if (where) head.append(el("span", "place", where));
 
   const sub = el("div", "sub");
-  const onBase = p.base && p.base !== snap.defaultBranch ? ` → ${p.base}` : "";
+  // Show the base only when it is not the default branch; unknown default (old cache, failed lookup) shows none.
+  const onBase = p.base && snap.defaultBranch && p.base !== snap.defaultBranch ? ` → ${p.base}` : "";
   sub.append(el("span", "branch", p.branch + onBase));
   let when = "opened " + ago(p.createdAt), full = "opened " + day(p.createdAt);
   if (p.status === "merged" && p.mergedAt) { when = "merged " + day(p.mergedAt); full += " · " + when; }

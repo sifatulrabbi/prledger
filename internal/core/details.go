@@ -113,6 +113,11 @@ func (d Details) apply(p PR) PR {
 	if p.Review == "" {
 		p.Review = reviewOf(p.Reviewers)
 	}
+	// GitHub keeps CHANGES_REQUESTED until those reviewers approve. Once the
+	// author has asked every one of them again, the PR waits on them.
+	if p.Review == ReviewChanges && !hasState(p.Reviewers, ReviewerChanges) && hasState(p.Reviewers, ReviewerRequested) {
+		p.Review = ReviewRequired
+	}
 	p.Checks = d.Checks
 	p.Merge = d.Merge
 	p.Attention = attentionOf(p)
@@ -137,18 +142,19 @@ func (d Details) reviewers() []Reviewer {
 
 // reviewOf stands in for GitHub's decision in repos that require no review.
 func reviewOf(rs []Reviewer) Review {
-	has := func(s ReviewerState) bool {
-		return slices.ContainsFunc(rs, func(r Reviewer) bool { return r.State == s })
-	}
 	switch {
-	case has(ReviewerChanges):
+	case hasState(rs, ReviewerChanges):
 		return ReviewChanges
-	case has(ReviewerApproved):
+	case hasState(rs, ReviewerApproved):
 		return ReviewApproved
-	case has(ReviewerRequested):
+	case hasState(rs, ReviewerRequested):
 		return ReviewRequired
 	}
 	return ""
+}
+
+func hasState(rs []Reviewer, s ReviewerState) bool {
+	return slices.ContainsFunc(rs, func(r Reviewer) bool { return r.State == s })
 }
 
 func attentionOf(p PR) Attention {

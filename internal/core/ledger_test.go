@@ -21,12 +21,17 @@ type fakeSource struct {
 	detailsCalls  int
 	// detailsFailures, when set, limits detailsErr to the first calls.
 	detailsFailures int
+	// detailsFn, when set, answers OpenDetails instead.
+	detailsFn func(ctx context.Context) ([]core.Details, error)
 }
 
 // OpenDetails fails with detailsErr; with detailsFailures set, only that many
 // times and then answers details.
-func (f *fakeSource) OpenDetails(context.Context, core.Query) ([]core.Details, error) {
+func (f *fakeSource) OpenDetails(ctx context.Context, _ core.Query) ([]core.Details, error) {
 	f.detailsCalls++
+	if f.detailsFn != nil {
+		return f.detailsFn(ctx)
+	}
 	if f.detailsErr != nil && (f.detailsFailures == 0 || f.detailsCalls <= f.detailsFailures) {
 		return nil, f.detailsErr
 	}
