@@ -209,6 +209,9 @@ func snapshotFor(cmd *cobra.Command, t target, d Deps, cached bool) (core.Snapsh
 	if err != nil {
 		return core.Snapshot{}, err
 	}
+	for _, w := range snap.Warnings {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
+	}
 	if err := c.Save(snap); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not update the cache: %v\n", err)
 	}

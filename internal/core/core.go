@@ -37,6 +37,15 @@ type PR struct {
 	CreatedAt time.Time  `json:"createdAt"`
 	MergedAt  *time.Time `json:"mergedAt"`
 	ClosedAt  *time.Time `json:"closedAt"`
+	Labels    []Label    `json:"labels,omitempty"`
+	Assignees []string   `json:"assignees,omitempty"`
+
+	// Open PRs only, and only when gh could give them (see Details).
+	Reviewers []Reviewer `json:"reviewers,omitempty"`
+	Review    Review     `json:"review,omitempty"`
+	Checks    *Checks    `json:"checks,omitempty"`
+	Merge     Merge      `json:"merge,omitempty"`
+	Attention Attention  `json:"attention,omitempty"`
 }
 
 // Query selects the pull requests to list.
@@ -52,4 +61,6 @@ type PRSource interface {
 	// DefaultBranch is the branch the repo merges into by default; PRs based
 	// on any other branch that is not a PR of theirs are on a shared base.
 	DefaultBranch(ctx context.Context, repo Repo) (string, error)
+	// OpenDetails gives reviews, CI and merge state for q's open PRs.
+	OpenDetails(ctx context.Context, q Query) ([]Details, error)
 }

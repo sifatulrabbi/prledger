@@ -19,7 +19,10 @@ type Snapshot struct {
 	Author        string    `json:"author"`
 	DefaultBranch string    `json:"defaultBranch,omitempty"` // "" in snapshots from before stacks
 	FetchedAt     time.Time `json:"fetchedAt"`
-	Groups        []Group   `json:"groups"`
+	// Warnings name the extras gh could not give (default branch, reviews,
+	// CI); the PRs are complete without them.
+	Warnings []string `json:"warnings,omitempty"`
+	Groups   []Group  `json:"groups"`
 }
 
 // Group is a named set of PRs that belong to one piece of work.
@@ -45,11 +48,17 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	var warnings []string
 	// Without the default branch only shared-base stacks are lost, so a
 	// failure here does not fail the snapshot.
 	base, err := l.Source.DefaultBranch(ctx, q.Repo)
 	if err != nil {
 		base = ""
+		warnings = append(warnings, "Stacks on shared branches are not shown: "+err.Error())
+	}
+	prs, err = l.withDetails(ctx, q, prs)
+	if err != nil {
+		warnings = append(warnings, "Reviews, CI and merge state are not shown: "+err.Error())
 	}
 	return Snapshot{
 		Schema:        SchemaVersion,
@@ -57,8 +66,33 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 		Author:        q.Author,
 		DefaultBranch: base,
 		FetchedAt:     l.Now().UTC(),
+		Warnings:      warnings,
 		Groups:        orEmpty(l.Grouping.arrange(prs, base)),
 	}, nil
+}
+
+// withDetails adds the open PRs' details to prs. It skips the call when no
+// PR is open, and on failure returns prs unchanged with the error.
+func (l Ledger) withDetails(ctx context.Context, q Query, prs []PR) ([]PR, error) {
+	if !slices.ContainsFunc(prs, func(p PR) bool { return p.Status == StatusOpen || p.Status == StatusDraft }) {
+		return prs, nil
+	}
+	details, err := l.Source.OpenDetails(ctx, q)
+	if err != nil {
+		return prs, err
+	}
+	byNumber := make(map[int]Details, len(details))
+	for _, d := range details {
+		byNumber[d.Number] = d
+	}
+	out := make([]PR, len(prs))
+	for i, p := range prs {
+		if d, ok := byNumber[p.Number]; ok {
+			p = d.apply(p)
+		}
+		out[i] = p
+	}
+	return out, nil
 }
 
 // Regroup re-arranges a snapshot's PRs with the Ledger's grouping, e.g. a

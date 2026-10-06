@@ -17,7 +17,36 @@
           "url": "https://github.com/octo/hello-world/pull/12",
           "createdAt": "2026-09-20T10:00:00Z",
           "mergedAt": null,
-          "closedAt": null
+          "closedAt": null,
+          "labels": [
+            {
+              "name": "search",
+              "color": "1d76db",
+              "description": "Search and filters"
+            }
+          ],
+          "assignees": [
+            "alice"
+          ],
+          "reviewers": [
+            {
+              "login": "bob",
+              "state": "approved"
+            },
+            {
+              "login": "carol",
+              "state": "requested"
+            }
+          ],
+          "review": "approved",
+          "checks": {
+            "state": "pass",
+            "passed": 2,
+            "failed": 0,
+            "pending": 0
+          },
+          "merge": "clean",
+          "attention": "approved"
         },
         {
           "number": 11,
@@ -28,7 +57,13 @@
           "url": "https://github.com/octo/hello-world/pull/11",
           "createdAt": "2026-09-18T10:00:00Z",
           "mergedAt": null,
-          "closedAt": null
+          "closedAt": null,
+          "checks": {
+            "state": "pending",
+            "passed": 0,
+            "failed": 0,
+            "pending": 1
+          }
         },
         {
           "number": 10,
