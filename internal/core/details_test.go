@@ -47,12 +47,10 @@ var openPR = core.PR{Number: 7, Status: core.StatusOpen, CreatedAt: day(1)}
 
 func TestReviewersJoinRequestsAndReviews(t *testing.T) {
 	got := detailed(t, openPR, core.Details{
-		Author:    "alice",
 		Requested: []string{"carol", "octo/backend"},
 		Reviews: []core.Reviewer{
 			{Login: "bob", State: core.ReviewerApproved},
-			{Login: "alice", State: core.ReviewerCommented}, // her own replies
-			{Login: "carol", State: core.ReviewerChanges},   // asked again since
+			{Login: "carol", State: core.ReviewerChanges}, // asked again since
 		},
 	})
 	want := []core.Reviewer{
@@ -143,6 +141,26 @@ func TestFailedDetailsBecomeAWarning(t *testing.T) {
 	}
 	if len(snap.PRs()) != 1 || len(snap.Warnings) != 1 || !strings.Contains(snap.Warnings[0], "504") {
 		t.Fatalf("snap = %+v, want the PR and one warning naming the failure", snap)
+	}
+}
+
+// Regression: GitHub sometimes cuts the slow details response short (gh says
+// "unexpected end of JSON input"); one retry hides most of those.
+func TestDetailsAreRetriedOnce(t *testing.T) {
+	src := &fakeSource{prs: []core.PR{openPR}, details: []core.Details{{Number: 7, Merge: core.MergeBehind}}, detailsErr: errors.New("gh: unexpected end of JSON input"), detailsFailures: 1}
+	snap, err := core.Ledger{Source: src, Now: clock}.Snapshot(context.Background(), core.Query{Repo: repo})
+	if err != nil || src.detailsCalls != 2 || len(snap.Warnings) != 0 || snap.PRs()[0].Merge != core.MergeBehind {
+		t.Fatalf("calls %d, warnings %q, PR %+v, err %v; want the second try's details", src.detailsCalls, snap.Warnings, snap.PRs()[0], err)
+	}
+}
+
+func TestDetailsAreNotRetriedAfterCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	src := &fakeSource{prs: []core.PR{openPR}, detailsErr: context.Canceled}
+	_, _ = core.Ledger{Source: src, Now: clock}.Snapshot(ctx, core.Query{Repo: repo})
+	if src.detailsCalls != 1 {
+		t.Fatalf("details calls = %d after cancel, want 1", src.detailsCalls)
 	}
 }
 

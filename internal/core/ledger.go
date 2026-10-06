@@ -78,6 +78,11 @@ func (l Ledger) withDetails(ctx context.Context, q Query, prs []PR) ([]PR, error
 		return prs, nil
 	}
 	details, err := l.Source.OpenDetails(ctx, q)
+	if err != nil && ctx.Err() == nil {
+		// GitHub sometimes cuts this slow response short; a second try
+		// usually works.
+		details, err = l.Source.OpenDetails(ctx, q)
+	}
 	if err != nil {
 		return prs, err
 	}

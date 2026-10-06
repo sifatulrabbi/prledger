@@ -31,11 +31,11 @@ type Client struct {
 }
 
 // prFields are cheap for GitHub to answer even for hundreds of PRs.
-const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,labels,assignees"
+const prFields = "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,author,labels,assignees"
 
 // detailFields are not: asking for them across every PR of a busy repo makes
 // GitHub time out (HTTP 502/504), so OpenDetails asks for open PRs only.
-const detailFields = "number,author,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus"
+const detailFields = "number,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus"
 
 type ghPR struct {
 	Number      int        `json:"number"`
@@ -53,6 +53,7 @@ type ghPR struct {
 		Color       string `json:"color"`
 		Description string `json:"description"`
 	} `json:"labels"`
+	Author    ghUser   `json:"author"`
 	Assignees []ghUser `json:"assignees"`
 }
 
@@ -62,7 +63,6 @@ type ghUser struct {
 
 type ghDetails struct {
 	Number         int    `json:"number"`
-	Author         ghUser `json:"author"`
 	ReviewDecision string `json:"reviewDecision"`
 	ReviewRequests []struct {
 		Login string `json:"login"` // users and bots
@@ -158,6 +158,7 @@ func (c Client) ListPRs(ctx context.Context, q core.Query) ([]core.PR, error) {
 			CreatedAt: r.CreatedAt,
 			MergedAt:  r.MergedAt,
 			ClosedAt:  r.ClosedAt,
+			Author:    r.Author.Login,
 		}
 		for _, l := range r.Labels {
 			p.Labels = append(p.Labels, core.Label{Name: l.Name, Color: l.Color, Description: l.Description})
@@ -180,7 +181,6 @@ func (c Client) OpenDetails(ctx context.Context, q core.Query) ([]core.Details, 
 	for _, r := range raw {
 		d := core.Details{
 			Number:   r.Number,
-			Author:   r.Author.Login,
 			Decision: reviewDecision[r.ReviewDecision],
 			Merge:    mergeState(r.Mergeable, r.MergeStateStatus),
 		}
@@ -212,12 +212,12 @@ var reviewDecision = map[string]core.Review{
 	"REVIEW_REQUIRED":   core.ReviewRequired,
 }
 
-// reviewerState maps the review states that say where a reviewer stands;
-// dismissed and unsubmitted (PENDING) reviews say nothing.
+// reviewerState maps the review states that take a stand. Comment-only
+// reviews do not (and bots such as github-actions leave one on most PRs);
+// dismissed and unsubmitted (PENDING) reviews say nothing either.
 var reviewerState = map[string]core.ReviewerState{
 	"APPROVED":          core.ReviewerApproved,
 	"CHANGES_REQUESTED": core.ReviewerChanges,
-	"COMMENTED":         core.ReviewerCommented,
 }
 
 // checkState reads one statusCheckRollup entry: a check run (status and

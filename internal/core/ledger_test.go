@@ -19,11 +19,18 @@ type fakeSource struct {
 	details       []core.Details
 	detailsErr    error
 	detailsCalls  int
+	// detailsFailures, when set, limits detailsErr to the first calls.
+	detailsFailures int
 }
 
+// OpenDetails fails with detailsErr; with detailsFailures set, only that many
+// times and then answers details.
 func (f *fakeSource) OpenDetails(context.Context, core.Query) ([]core.Details, error) {
 	f.detailsCalls++
-	return f.details, f.detailsErr
+	if f.detailsErr != nil && (f.detailsFailures == 0 || f.detailsCalls <= f.detailsFailures) {
+		return nil, f.detailsErr
+	}
+	return f.details, nil
 }
 
 func (f *fakeSource) ListPRs(_ context.Context, q core.Query) ([]core.PR, error) {

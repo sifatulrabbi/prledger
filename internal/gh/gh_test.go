@@ -36,7 +36,7 @@ func TestListPRsRunsGhPrList(t *testing.T) {
 	wantArgv := []string{
 		"env", "GH_CONFIG_DIR=/tmp/gh", "gh",
 		"pr", "list", "--repo", "octo/hello-world", "--author", "@me", "--state", "all", "--limit", "500",
-		"--json", "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,labels,assignees",
+		"--json", "number,title,headRefName,baseRefName,state,isDraft,url,createdAt,mergedAt,closedAt,author,labels,assignees",
 	}
 	if !reflect.DeepEqual(r.argv, wantArgv) {
 		t.Errorf("argv =\n%q\nwant\n%q", r.argv, wantArgv)
@@ -69,8 +69,9 @@ func TestListPRsMapsGhJSON(t *testing.T) {
 	}
 }
 
-func TestListPRsMapsLabelsAndAssignees(t *testing.T) {
+func TestListPRsMapsLabelsAssigneesAndAuthor(t *testing.T) {
 	r := &fakeRunner{stdout: `[{"number":5,"state":"OPEN","createdAt":"2026-01-01T10:00:00Z",
+	  "author":{"id":"U_1","login":"alice","name":"Alice","is_bot":false},
 	  "labels":[{"id":"LA_1","name":"bug","description":"Something is broken","color":"d73a4a"}],
 	  "assignees":[{"id":"U_1","login":"alice","name":"Alice"},{"id":"U_2","login":"bob","name":""}]}]`}
 	prs, err := Client{Runner: r, Command: []string{"gh"}}.ListPRs(context.Background(), query)
@@ -83,6 +84,9 @@ func TestListPRsMapsLabelsAndAssignees(t *testing.T) {
 	if want := []string{"alice", "bob"}; !reflect.DeepEqual(prs[0].Assignees, want) {
 		t.Errorf("Assignees = %q, want %q", prs[0].Assignees, want)
 	}
+	if prs[0].Author != "alice" {
+		t.Errorf("Author = %q, want alice", prs[0].Author)
+	}
 }
 
 func TestOpenDetailsAsksForOpenPRsOnly(t *testing.T) {
@@ -92,7 +96,7 @@ func TestOpenDetailsAsksForOpenPRsOnly(t *testing.T) {
 	}
 	want := []string{
 		"gh", "pr", "list", "--repo", "octo/hello-world", "--author", "@me", "--state", "open", "--limit", "500",
-		"--json", "number,author,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus",
+		"--json", "number,reviewDecision,reviewRequests,latestReviews,statusCheckRollup,mergeable,mergeStateStatus",
 	}
 	if !reflect.DeepEqual(r.argv, want) {
 		t.Fatalf("argv =\n%q\nwant\n%q", r.argv, want)
@@ -102,13 +106,14 @@ func TestOpenDetailsAsksForOpenPRsOnly(t *testing.T) {
 // The shapes below are what gh 2.x prints for these fields.
 func TestOpenDetailsMapsReviewsChecksAndMergeState(t *testing.T) {
 	r := &fakeRunner{stdout: `[{
-	  "number": 7, "author": {"login": "alice", "name": "Alice"},
+	  "number": 7,
 	  "reviewDecision": "CHANGES_REQUESTED", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
 	  "reviewRequests": [{"__typename": "User", "login": "carol"}, {"__typename": "Team", "name": "Backend", "slug": "octo/backend"}],
 	  "latestReviews": [
 	    {"author": {"login": "dan"}, "state": "CHANGES_REQUESTED", "submittedAt": "2026-03-02T10:00:00Z"},
 	    {"author": {"login": "bob"}, "state": "APPROVED", "submittedAt": "2026-03-01T10:00:00Z"},
-	    {"author": {"login": "erin"}, "state": "DISMISSED", "submittedAt": "2026-03-03T10:00:00Z"}
+	    {"author": {"login": "erin"}, "state": "DISMISSED", "submittedAt": "2026-03-03T10:00:00Z"},
+	    {"author": {"login": "github-actions"}, "state": "COMMENTED", "submittedAt": "2026-03-04T10:00:00Z"}
 	  ],
 	  "statusCheckRollup": [
 	    {"__typename": "CheckRun", "name": "test", "status": "COMPLETED", "conclusion": "SUCCESS"},
@@ -125,10 +130,9 @@ func TestOpenDetailsMapsReviewsChecksAndMergeState(t *testing.T) {
 	}
 	want := []core.Details{{
 		Number:    7,
-		Author:    "alice",
 		Decision:  core.ReviewChanges,
 		Requested: []string{"carol", "octo/backend"},
-		Reviews: []core.Reviewer{ // oldest first; dismissed reviews dropped
+		Reviews: []core.Reviewer{ // oldest first; dismissed and comment-only reviews dropped
 			{Login: "bob", State: core.ReviewerApproved},
 			{Login: "dan", State: core.ReviewerChanges},
 		},

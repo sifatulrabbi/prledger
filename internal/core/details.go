@@ -16,7 +16,6 @@ const (
 	ReviewerRequested ReviewerState = "requested"
 	ReviewerApproved  ReviewerState = "approved"
 	ReviewerChanges   ReviewerState = "changes_requested"
-	ReviewerCommented ReviewerState = "commented"
 )
 
 // Reviewer is a user or team (as "org/team") asked to review, or who did.
@@ -100,7 +99,6 @@ const (
 // Fetching them is slow, so they come only for open PRs, in a second call.
 type Details struct {
 	Number    int
-	Author    string     // the PR's author; their own replies are not reviews
 	Decision  Review     // GitHub's review decision; "" when the repo requires no review
 	Requested []string   // reviewers asked and not yet answered
 	Reviews   []Reviewer // each reviewer's latest review, oldest first
@@ -126,7 +124,7 @@ func (d Details) apply(p PR) PR {
 func (d Details) reviewers() []Reviewer {
 	var out []Reviewer
 	for _, r := range d.Reviews {
-		if r.Login == d.Author || slices.Contains(d.Requested, r.Login) {
+		if slices.Contains(d.Requested, r.Login) {
 			continue
 		}
 		out = append(out, r)

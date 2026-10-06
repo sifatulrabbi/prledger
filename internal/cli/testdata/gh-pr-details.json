@@ -1,9 +1,9 @@
 [
-  {"number":12,"author":{"login":"alice"},"reviewDecision":"APPROVED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN",
+  {"number":12,"reviewDecision":"APPROVED","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN",
    "reviewRequests":[{"__typename":"User","login":"carol"}],
    "latestReviews":[{"author":{"login":"bob"},"state":"APPROVED","submittedAt":"2026-09-21T10:00:00Z"}],
    "statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"},{"__typename":"StatusContext","context":"ci/lint","state":"SUCCESS"}]},
-  {"number":11,"author":{"login":"alice"},"reviewDecision":"","mergeable":"UNKNOWN","mergeStateStatus":"DRAFT",
+  {"number":11,"reviewDecision":"","mergeable":"UNKNOWN","mergeStateStatus":"DRAFT",
    "reviewRequests":[],"latestReviews":[],
    "statusCheckRollup":[{"__typename":"CheckRun","name":"test","status":"IN_PROGRESS","conclusion":""}]}
 ]

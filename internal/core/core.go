@@ -37,6 +37,7 @@ type PR struct {
 	CreatedAt time.Time  `json:"createdAt"`
 	MergedAt  *time.Time `json:"mergedAt"`
 	ClosedAt  *time.Time `json:"closedAt"`
+	Author    string     `json:"author,omitempty"` // a login; the page hides it among assignees
 	Labels    []Label    `json:"labels,omitempty"`
 	Assignees []string   `json:"assignees,omitempty"`
 
