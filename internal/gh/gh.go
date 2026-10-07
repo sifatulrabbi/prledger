@@ -278,6 +278,130 @@ func mergeState(mergeable, status string) core.Merge {
 	return ""
 }
 
+// discussionsQuery asks for who said what on open PRs. `gh pr list` cannot:
+// it has no review threads, and its authors are bare logins, so bots (which
+// leave most comments on busy repos) look like people. The page sizes keep
+// the query under GitHub's node limit; past them, the newest items count
+// (`last`), so a long PR still shows its latest threads. A thread's first
+// comment names who opened it.
+const discussionsQuery = `query($q: String!, $n: Int!) {
+  search(type: ISSUE, query: $q, first: $n) {
+    nodes {
+      ... on PullRequest {
+        number
+        reviews(last: 100) { nodes { author { login __typename } body submittedAt } }
+        comments(last: 100) { nodes { author { login __typename } createdAt isMinimized } }
+        reviewThreads(last: 50) { nodes { isResolved comments(first: 20) { nodes { author { login __typename } createdAt } } } }
+      }
+    }
+  }
+}`
+
+type ghActor struct {
+	Login    string `json:"login"`
+	Typename string `json:"__typename"`
+}
+
+// person is the login of a person, or "" for bots and deleted accounts.
+func (a *ghActor) person() string {
+	if a == nil || a.Typename == "Bot" {
+		return ""
+	}
+	return a.Login
+}
+
+type ghDiscussions struct {
+	Data struct {
+		Search struct {
+			Nodes []struct {
+				Number  int `json:"number"`
+				Reviews struct {
+					Nodes []struct {
+						Author      *ghActor  `json:"author"`
+						Body        string    `json:"body"`
+						SubmittedAt time.Time `json:"submittedAt"`
+					} `json:"nodes"`
+				} `json:"reviews"`
+				Comments struct {
+					Nodes []struct {
+						Author      *ghActor  `json:"author"`
+						CreatedAt   time.Time `json:"createdAt"`
+						IsMinimized bool      `json:"isMinimized"`
+					} `json:"nodes"`
+				} `json:"comments"`
+				ReviewThreads struct {
+					Nodes []struct {
+						IsResolved bool `json:"isResolved"`
+						Comments   struct {
+							Nodes []struct {
+								Author    *ghActor  `json:"author"`
+								CreatedAt time.Time `json:"createdAt"`
+							} `json:"nodes"`
+						} `json:"comments"`
+					} `json:"nodes"`
+				} `json:"reviewThreads"`
+			} `json:"nodes"`
+		} `json:"search"`
+	} `json:"data"`
+}
+
+// maxSearch is the most results one GitHub search page holds.
+const maxSearch = 100
+
+// Discussions runs one GraphQL search over q's open PRs for review texts,
+// comments on the code and conversation comments. Bots are left out.
+func (c Client) Discussions(ctx context.Context, q core.Query) ([]core.Discussion, error) {
+	// Newest first, like ListPRs: with more open PRs than one page holds,
+	// the newest get their comments rather than a best-match handful.
+	search := fmt.Sprintf("repo:%s is:pr is:open author:%s sort:created-desc", q.Repo, q.Author)
+	raw, err := c.Exec(ctx, "api", "graphql",
+		"-f", "query="+discussionsQuery,
+		"-f", "q="+search,
+		"-F", "n="+strconv.Itoa(min(cmp.Or(q.Limit, maxSearch), maxSearch)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("reading review comments with gh: %w", err)
+	}
+	var res ghDiscussions
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("reading gh api graphql output: %w", err)
+	}
+	var out []core.Discussion
+	for _, n := range res.Data.Search.Nodes {
+		if n.Number == 0 {
+			continue // not a pull request
+		}
+		d := core.Discussion{Number: n.Number}
+		note := func(a *ghActor, at time.Time) {
+			if login := a.person(); login != "" {
+				d.Notes = append(d.Notes, core.Note{Login: login, At: at})
+			}
+		}
+		for _, r := range n.Reviews.Nodes {
+			if strings.TrimSpace(r.Body) != "" { // an empty text means inline comments only; those come with the threads
+				note(r.Author, r.SubmittedAt)
+			}
+		}
+		for _, cm := range n.Comments.Nodes {
+			if !cm.IsMinimized {
+				note(cm.Author, cm.CreatedAt)
+			}
+		}
+		for _, th := range n.ReviewThreads.Nodes {
+			t := core.Thread{Resolved: th.IsResolved}
+			for i, cm := range th.Comments.Nodes {
+				note(cm.Author, cm.CreatedAt)
+				if i == 0 {
+					t.Opener = cm.Author.person()
+				}
+			}
+			d.Threads = append(d.Threads, t)
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
 // DefaultBranch asks gh for the repo's default branch.
 func (c Client) DefaultBranch(ctx context.Context, repo core.Repo) (string, error) {
 	out, err := c.Exec(ctx, "repo", "view", repo.String(), "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name")

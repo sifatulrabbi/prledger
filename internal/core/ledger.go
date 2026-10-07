@@ -66,14 +66,13 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 		base = ""
 		warnings = append(warnings, "Stacks on shared branches are not shown: "+err.Error())
 	}
-	if !l.SkipDetails {
-		prs, err = l.withDetails(ctx, q, prs)
+	if !l.SkipDetails && slices.ContainsFunc(prs, live) {
+		var w []string
+		prs, w = l.withDetails(ctx, q, prs)
 		if ctx.Err() != nil {
 			return Snapshot{}, ctx.Err() // cancelled: no half snapshot for the cache
 		}
-		if err != nil {
-			warnings = append(warnings, "Reviews, CI and merge state are not shown: "+err.Error())
-		}
+		warnings = append(warnings, w...)
 	}
 	return Snapshot{
 		Schema:        SchemaVersion,
@@ -86,46 +85,75 @@ func (l Ledger) Snapshot(ctx context.Context, q Query) (Snapshot, error) {
 	}, nil
 }
 
-// withDetails adds the open PRs' details to prs. It skips the call when no
-// PR is open, and on failure returns prs unchanged with the error.
-func (l Ledger) withDetails(ctx context.Context, q Query, prs []PR) ([]PR, error) {
-	if !slices.ContainsFunc(prs, func(p PR) bool { return p.Status == StatusOpen || p.Status == StatusDraft }) {
-		return prs, nil
-	}
-	details, err := l.tryDetails(ctx, q)
-	if err != nil && ctx.Err() == nil {
-		// GitHub sometimes cuts this slow response short; a second try
-		// usually works.
-		details, err = l.tryDetails(ctx, q)
-	}
+func live(p PR) bool { return p.Status == StatusOpen || p.Status == StatusDraft }
+
+// withDetails adds the open PRs' details and discussions to prs. The two
+// calls run side by side; each one that fails leaves its part out and says so
+// in a warning.
+func (l Ledger) withDetails(ctx context.Context, q Query, prs []PR) ([]PR, []string) {
+	limit := cmp.Or(l.DetailsTimeout, DefaultDetailsTimeout)
+	var talk []Discussion
+	var talkErr error
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		talk, talkErr = fetchExtra(ctx, limit, func(ctx context.Context) ([]Discussion, error) { return l.Source.Discussions(ctx, q) })
+	}()
+	details, err := fetchExtra(ctx, limit, func(ctx context.Context) ([]Details, error) { return l.Source.OpenDetails(ctx, q) })
+	<-done
+
+	var warnings []string
 	if err != nil {
-		return prs, err
+		warnings = append(warnings, "Reviews, CI and merge state are not shown: "+err.Error())
 	}
-	byNumber := make(map[int]Details, len(details))
-	for _, d := range details {
-		byNumber[d.Number] = d
+	if talkErr != nil {
+		warnings = append(warnings, "Review comments are not shown: "+talkErr.Error())
 	}
+	detailsOf := byNumber(details, func(d Details) int { return d.Number })
+	talkOf := byNumber(talk, func(t Discussion) int { return t.Number })
 	out := make([]PR, len(prs))
 	for i, p := range prs {
-		if d, ok := byNumber[p.Number]; ok {
+		if t, ok := talkOf[p.Number]; ok {
+			p = t.apply(p)
+		}
+		// Attention weighs CI and reviews first; comments alone cannot tell
+		// whether a PR waits on others.
+		if d, ok := detailsOf[p.Number]; ok {
 			p = d.apply(p)
+			p.Attention = attentionOf(p)
 		}
 		out[i] = p
 	}
-	return out, nil
+	return out, warnings
 }
 
-// tryDetails runs one details call in its own time, so a hung call cannot use
-// up the whole fetch's time and leave none for a second try.
-func (l Ledger) tryDetails(ctx context.Context, q Query) ([]Details, error) {
-	limit := cmp.Or(l.DetailsTimeout, DefaultDetailsTimeout)
-	tctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	details, err := l.Source.OpenDetails(tctx, q)
-	if err != nil && ctx.Err() == nil && tctx.Err() != nil {
-		return nil, fmt.Errorf("gh took longer than %s", limit)
+func byNumber[T any](items []T, number func(T) int) map[int]T {
+	m := make(map[int]T, len(items))
+	for _, it := range items {
+		m[number(it)] = it
 	}
-	return details, err
+	return m
+}
+
+// fetchExtra runs one of the optional calls. Each try gets its own time, so a
+// hung call cannot use up the whole fetch's time and leave none for a second
+// try; GitHub sometimes cuts these slow responses short, and a second try
+// usually works.
+func fetchExtra[T any](ctx context.Context, limit time.Duration, fetch func(context.Context) ([]T, error)) ([]T, error) {
+	try := func() ([]T, error) {
+		tctx, cancel := context.WithTimeout(ctx, limit)
+		defer cancel()
+		out, err := fetch(tctx)
+		if err != nil && ctx.Err() == nil && tctx.Err() != nil {
+			return nil, fmt.Errorf("gh took longer than %s", limit)
+		}
+		return out, err
+	}
+	out, err := try()
+	if err != nil && ctx.Err() == nil {
+		out, err = try()
+	}
+	return out, err
 }
 
 // Regroup re-arranges a snapshot's PRs with the Ledger's grouping, e.g. a

@@ -80,18 +80,57 @@ var (
 	mergeWords  = map[core.Merge]string{core.MergeConflicting: "conflicts", core.MergeBehind: "behind base"}
 )
 
-// signals sums up an open PR's CI, review and merge state in a few words.
+// signals sums up an open PR's CI, review, merge state and who commented in a
+// few words, naming who asked for changes and whose threads are open.
 func signals(pr core.PR) string {
 	var words []string
 	if pr.Checks != nil {
 		words = append(words, checkWords[pr.Checks.State])
 	}
-	for _, w := range []string{reviewWords[pr.Review], mergeWords[pr.Merge]} {
+	review := reviewWords[pr.Review]
+	if pr.Review == core.ReviewChanges {
+		var who []string
+		for _, r := range pr.Reviewers {
+			if r.State == core.ReviewerChanges {
+				who = append(who, r.Login)
+			}
+		}
+		if len(who) > 0 {
+			review += " by " + names(who)
+		}
+	}
+	var open, said []string
+	for _, c := range pr.Commenters {
+		if c.Unresolved > 0 {
+			open = append(open, c.Login)
+		} else {
+			said = append(said, c.Login) // named once: open threads say more
+		}
+	}
+	unresolved := ""
+	if n := pr.Unresolved(); n > 0 {
+		unresolved = fmt.Sprintf("%d unresolved (%s)", n, names(open))
+	}
+	comments := ""
+	if len(said) > 0 {
+		comments = "comments: " + names(said)
+	}
+	for _, w := range []string{review, mergeWords[pr.Merge], unresolved, comments} {
 		if w != "" {
 			words = append(words, w)
 		}
 	}
 	return strings.Join(words, " · ")
+}
+
+const maxNames = 3
+
+// names lists logins for a table cell, at most maxNames of them.
+func names(logins []string) string {
+	if len(logins) > maxNames {
+		return strings.Join(logins[:maxNames], ", ") + fmt.Sprintf(" +%d", len(logins)-maxNames)
+	}
+	return strings.Join(logins, ", ")
 }
 
 func truncate(s string, n int) string {

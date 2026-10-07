@@ -1,7 +1,7 @@
 octo/hello-world · 4 pull requests by @me · fetched 2026-10-05 12:00 UTC
 
 Ungrouped (4)
-  #12  open    feat(search): add fuzzy matching            alice/abc-12-fuzzy-search  ci ✓ · approved
-  #11  draft   wip: try a new cache                        alice/cache-spike          ci …
+  #12  open    feat(search): add fuzzy matching            alice/abc-12-fuzzy-search  ci ✓ · approved · comments: erin, bob
+  #11  draft   wip: try a new cache                        alice/cache-spike          ci … · 1 unresolved (dave)
   #10  merged  fix(login): keep the session after refresh  alice/abc-10-login         
   #9   closed  chore: drop the old build script            alice/old-build            
