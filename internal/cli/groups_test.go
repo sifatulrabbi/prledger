@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -46,6 +47,9 @@ func TestGroupsSuggestSkipsDetailsAndKeepsTheCache(t *testing.T) {
 		case hasPair(argv, "--state", "open"):
 			t.Errorf("groups suggest asked gh for details: %q", argv)
 			return []byte("[]"), nil
+		case isDiscussions(argv):
+			t.Errorf("groups suggest asked gh for comments: %q", argv)
+			return nil, errors.New("not expected")
 		case slices.Contains(argv, "view"):
 			return []byte("main\n"), nil
 		}

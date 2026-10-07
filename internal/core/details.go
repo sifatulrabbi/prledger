@@ -90,7 +90,7 @@ const (
 type Attention string
 
 const (
-	AttentionNeedsYou Attention = "needs_you" // conflicts, failing CI or requested changes
+	AttentionNeedsYou Attention = "needs_you" // conflicts, failing CI, requested changes or unresolved threads
 	AttentionApproved Attention = "approved"
 	AttentionWaiting  Attention = "waiting" // on reviewers or CI
 )
@@ -106,7 +106,7 @@ type Details struct {
 	Merge     Merge
 }
 
-// apply adds d to p and works out p's review state and attention.
+// apply adds d to p and works out p's review state.
 func (d Details) apply(p PR) PR {
 	p.Reviewers = d.reviewers()
 	p.Review = d.Decision
@@ -120,7 +120,6 @@ func (d Details) apply(p PR) PR {
 	}
 	p.Checks = d.Checks
 	p.Merge = d.Merge
-	p.Attention = attentionOf(p)
 	return p
 }
 
@@ -161,7 +160,7 @@ func attentionOf(p PR) Attention {
 	if p.Status != StatusOpen && p.Status != StatusDraft {
 		return ""
 	}
-	if p.Merge == MergeConflicting || (p.Checks != nil && p.Checks.State == CheckFail) || p.Review == ReviewChanges {
+	if p.Merge == MergeConflicting || (p.Checks != nil && p.Checks.State == CheckFail) || p.Review == ReviewChanges || p.Unresolved() > 0 {
 		return AttentionNeedsYou
 	}
 	switch {

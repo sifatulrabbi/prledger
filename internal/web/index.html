@@ -5,94 +5,93 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>prledger</title>
 <style>
-/* One column: header, sticky filter bar, groups as collapsible sections of one-PR-per-line cards. */
+/* One calm column: header, one row of filters, groups of cards. An open card has up to four lines:
+   title, branch and labels, where it stands (CI, merge, review), and who said what. Done cards are one line. */
 :root {
   --bg: #f6f7f9; --surface: #ffffff; --fg: #1d2330; --muted: #5d6676; --line: #dde1e8; --focus: #2f6feb; --warn-bg: #fff4e5;
-  --open: #1a7f37; --draft: #6b7380; --merged: #8250df; --closed: #c4302b;
-  --ok: #1a7f37; --bad: #c4302b; --wait: #9a6700;
+  --ok: #1a7f37; --bad: #c4302b; --wait: #9a6700; --merged: #8250df;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) { :root {
   --bg: #0f1218; --surface: #171b23; --fg: #e4e8ef; --muted: #98a1b0; --line: #2a303b; --focus: #58a6ff; --warn-bg: #3a2a12;
-  --open: #3fb950; --draft: #8b949e; --merged: #a371f7; --closed: #f85149;
-  --ok: #3fb950; --bad: #f85149; --wait: #d29922; color-scheme: dark } }
+  --ok: #3fb950; --bad: #f85149; --wait: #d29922; --merged: #a371f7; color-scheme: dark } }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; } /* else .btn's display wins over the hidden attribute */
-body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; }
-.wrap { max-width: 1040px; margin: 0 auto; padding-inline: 16px; padding-block: 24px 48px; display: grid; gap: 16px; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 28px 56px; display: grid; gap: 20px; }
 header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
 h1 { margin: 0; font-size: 22px; font-weight: 600; overflow-wrap: anywhere; }
 .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.notice { background: var(--warn-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.notice { background: var(--warn-bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .bar { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-block: 10px;
-  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chips + .chips { padding-left: 8px; border-left: 1px solid var(--line); }
+  display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; border-bottom: 1px solid var(--line); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip, .btn { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
-  border-radius: 999px; padding: 5px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
-.chip b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.btn[disabled] { opacity: .6; cursor: progress; }
+  border-radius: 999px; padding: 4px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; }
+.chip b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--muted); }
 .chip[aria-pressed="true"] { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--muted)); flex: none; }
+.chip[aria-pressed="true"] b { color: var(--fg); }
+.btn[disabled] { opacity: .6; cursor: progress; }
 #q { font: inherit; font-size: 13px; color: var(--fg); background: var(--surface); border: 1px solid var(--line);
-  border-radius: 8px; padding: 6px 10px; flex: 1 1 220px; min-width: 0; }
+  border-radius: 8px; padding: 6px 10px; flex: 1 1 200px; min-width: 0; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-details { border-top: 1px solid var(--line); padding-top: 12px; }
-summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; list-style: none; }
+main { display: grid; gap: 28px; }
+summary { cursor: pointer; display: flex; align-items: baseline; list-style: none; padding-block: 2px; }
+.gname { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; min-width: 0; } /* a long name wraps beside the chevron, not under it */
 summary::-webkit-details-marker { display: none; }
 summary::before { content: ""; width: 6px; height: 6px; align-self: center; margin-inline: 2px 4px;
   border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
 details[open] > summary::before { transform: rotate(45deg); }
 summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-.tally { display: inline-flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-.tally span { display: inline-flex; gap: 4px; align-items: center; }
-.kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted);
-  border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+.tally { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-/* A card is one line of the list: what it is on the left, where it stands on the right. */
-.list { display: grid; gap: 8px; padding-block: 12px 4px; }
-.card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 20px; padding: 10px 12px; border-radius: 8px;
+.list { display: grid; gap: 10px; padding-top: 12px; }
+.card { display: grid; gap: 6px; padding: 12px 16px; border-radius: 8px; min-width: 0;
   background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--edge, var(--line));
-  margin-left: calc(var(--depth, 0) * 20px); color: inherit; text-decoration: none; }
+  margin-left: calc(min(var(--depth, 0), 4) * 16px); color: inherit; text-decoration: none; }
 .card:hover .title { text-decoration: underline; }
 .card[data-a="needs_you"] { --edge: var(--bad); } .card[data-a="approved"] { --edge: var(--ok); } .card[data-a="waiting"] { --edge: var(--wait); }
-.main { display: grid; gap: 5px; min-width: 0; align-content: start; }
-.head { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; min-width: 0; }
 .num { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.pill { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--c);
-  border: 1px solid currentColor; border-radius: 999px; padding: 1px 8px; }
-.tag { font-size: 12px; font-weight: 600; color: var(--k); }
-.place { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.title { font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
-.done .title { font-weight: 400; color: var(--muted); }
-.sub { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; color: var(--muted); }
-.branch { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
-.when { font-variant-numeric: tabular-nums; }
-.labels { display: flex; flex-wrap: wrap; gap: 4px; }
-.label { font-size: 11.5px; line-height: 18px; padding: 0 8px; border-radius: 999px; max-width: 24ch;
+.title { font-size: 15px; font-weight: 500; flex: 1 1 24ch; min-width: 0; overflow-wrap: anywhere; }
+.aside { margin-left: auto; display: inline-flex; gap: 10px; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.aside .tag { font-weight: 600; }
+.branch { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+.place { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.labels { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.label { font-size: 12px; line-height: 18px; padding: 0 8px; border-radius: 999px; max-width: 24ch;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   border: 1px solid color-mix(in srgb, var(--lc, var(--muted)) 60%, transparent);
   background: color-mix(in srgb, var(--lc, var(--muted)) 16%, transparent); }
-.more { font-size: 11.5px; color: var(--muted); align-self: center; }
-.people { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.people b { font-weight: 500; color: var(--fg); }
-.sig { display: grid; gap: 4px; align-content: start; justify-items: end; font-size: 12.5px; white-space: nowrap; }
+.more { font-size: 12px; color: var(--muted); }
+.state, .people { font-size: 13px; gap: 2px 16px; }
 .s { color: var(--k, var(--muted)); font-variant-numeric: tabular-nums; }
+.who b { font-weight: 600; }
+.who .s { margin-left: 4px; }
+.people { padding-top: 6px; border-top: 1px dashed var(--line); }
+
+/* Merged and closed PRs are history: one quiet line. */
+.done { padding-block: 8px; gap: 0; }
+.done .title { font-size: 14px; font-weight: 400; color: var(--muted); }
+.done[data-s="merged"] .aside .tag { color: var(--merged); }
+
 .empty { color: var(--muted); padding-block: 24px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-
-[data-s="open"] { --c: var(--open); } [data-s="draft"] { --c: var(--draft); }
-[data-s="merged"] { --c: var(--merged); } [data-s="closed"] { --c: var(--closed); }
 [data-k="ok"] { --k: var(--ok); } [data-k="bad"] { --k: var(--bad); } [data-k="wait"] { --k: var(--wait); }
+.tag[data-k] { color: var(--k); }
+
 @media (max-width: 640px) {
+  .wrap { padding-block: 20px 40px; gap: 16px; }
   .bar { position: static; } /* the chips wrap to several rows; sticking would cover a quarter of the screen */
-  .card { grid-template-columns: minmax(0, 1fr); margin-left: calc(min(var(--depth, 0), 4) * 10px); }
-  .sig { display: flex; flex-wrap: wrap; gap: 4px 12px; white-space: normal; }
+  #q { flex-basis: 100%; }
+  .card { padding: 10px 12px; margin-left: calc(min(var(--depth, 0), 3) * 8px); }
+  .aside, .labels { margin-left: 0; }
+  .labels { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { summary::before { transition: none; } }
 </style>
@@ -108,8 +107,7 @@ summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhe
   </header>
   <div class="notice" id="notice" hidden></div>
   <div class="bar" role="toolbar" aria-label="Filter pull requests">
-    <div class="chips" id="states"></div>
-    <div class="chips" id="focus"></div>
+    <div class="chips" id="chips"></div>
     <input id="q" type="search" placeholder="Search number, title, branch, label or person" aria-label="Search pull requests">
   </div>
   <main id="groups"></main>
@@ -120,24 +118,21 @@ summary h2 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhe
 <script>
 "use strict";
 const live = p => p.status === "open" || p.status === "draft";
-// Filters are one choice: a state, or where an open PR stands (attention comes from core).
-// Approved means every approved PR, even one that also needs you (say, approved but conflicting).
-const STATES = [["active", "Active", live], ["open", "Open"], ["draft", "Draft"], ["merged", "Merged"], ["closed", "Closed"], ["all", "All", () => true]];
-const FOCUS = [
-  ["needs_you", "Needs you", "bad", p => p.attention === "needs_you"],
-  ["approved", "Approved", "ok", p => live(p) && p.review === "approved"],
-  ["waiting", "Waiting", "wait", p => p.attention === "waiting"],
+// One filter at a time. Attention comes from core; Approved means every approved PR,
+// even one that also needs you (say, approved but conflicting).
+const FILTERS = [
+  ["active", "Active", live],
+  ["needs_you", "Needs you", p => p.attention === "needs_you"],
+  ["approved", "Approved", p => live(p) && p.review === "approved"],
+  ["waiting", "Waiting", p => p.attention === "waiting"],
+  ["done", "Done", p => !live(p)],
+  ["all", "All", () => true],
 ];
-const FILTERS = Object.fromEntries([
-  ...STATES.map(([k, , f]) => [k, f || (p => p.status === k)]),
-  ...FOCUS.map(([k, , , f]) => [k, f]),
-]);
-const LABEL = { open: "Open", draft: "Draft", merged: "Merged", closed: "Closed" };
+const MATCH = Object.fromEntries(FILTERS.map(([k, , f]) => [k, f]));
 const ATTENTION = { needs_you: ["needs you", "bad"], approved: ["approved", "ok"], waiting: ["waiting", "wait"] };
-const REVIEW = { approved: ["✓ approved", "ok"], changes_requested: ["✗ changes requested", "bad"], review_required: ["… review needed", "wait"] };
-const MERGE = { conflicting: ["⊘ conflicts", "bad"], behind: ["↓ behind base", "wait"] };
-const REVIEWER = { approved: ["✓", "approved"], changes_requested: ["✗", "requested changes"], requested: ["…", "review requested"] };
-const MAX_LABELS = 4, MAX_PEOPLE = 4;
+const REVIEW = { approved: ["✓", "approved", "ok"], changes_requested: ["✗", "changes requested", "bad"], review_required: ["…", "review needed", "wait"] };
+const MERGE = { conflicting: ["⊘", "conflicts", "bad"], behind: ["↓", "behind base", "wait"] };
+const MAX_LABELS = 3, MAX_PEOPLE = 5;
 
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -151,10 +146,21 @@ function ago(iso) {
   }
   return "just now";
 }
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// A signal is a glyph plus words, never color alone; screen readers get only the words.
+function sig(glyph, words, k, title) {
+  const s = el("span", "s");
+  if (k) s.dataset.k = k;
+  if (glyph) { const g = el("span", null, glyph + " "); g.setAttribute("aria-hidden", "true"); s.append(g); }
+  s.append(words);
+  if (title) s.title = title;
+  return s;
+}
 
 let snap = null;
 let filter = store.get("prledger-filter") || "active";
-if (!(filter in FILTERS)) filter = "active";
+if (!(filter in MATCH)) filter = "active";
 
 function notice(text) { const n = $("notice"); n.textContent = text || ""; n.hidden = !text; }
 
@@ -174,18 +180,14 @@ function renderMeta(prs) {
 }
 
 function renderChips(prs) {
-  const chip = (key, label, s, k) => {
+  $("chips").replaceChildren(...FILTERS.map(([key, label]) => {
     const b = el("button", "chip");
     b.type = "button";
     b.setAttribute("aria-pressed", String(key === filter));
-    if (s) { b.dataset.s = s; b.append(el("span", "dot")); }
-    if (k) { b.dataset.k = k; b.style.setProperty("--c", `var(--k)`); b.append(el("span", "dot")); }
-    b.append(label + " ", el("b", null, String(prs.filter(FILTERS[key]).length)));
+    b.append(label, el("b", null, String(prs.filter(MATCH[key]).length)));
     b.addEventListener("click", () => { filter = key; store.set("prledger-filter", key); render(); });
     return b;
-  };
-  $("states").replaceChildren(...STATES.map(([key, label]) => chip(key, label, LABEL[key] && key)));
-  $("focus").replaceChildren(...FOCUS.map(([key, label, k]) => chip(key, label, null, k)));
+  }));
 }
 
 function place(g, i) {
@@ -197,25 +199,58 @@ function place(g, i) {
   return base ? `${pos} · on ${base}` : pos;
 }
 
-// signals is where an open PR stands: CI, review, merge. Each is a glyph plus words, never color alone.
-function signals(p) {
+// where an open PR stands: CI, merge, GitHub's review decision. Trouble first.
+function standing(p) {
   const out = [];
-  const add = ([text, k], title) => { const s = el("span", "s", text); s.dataset.k = k; if (title) s.title = title; out.push(s); };
   const c = p.checks;
   if (c) {
     const total = c.passed + c.failed + c.pending;
     const counts = `${c.passed} passed, ${c.failed} failed, ${c.pending} running`;
-    if (c.state === "fail") add([`✗ ${c.failed} of ${total} checks failed`, "bad"], counts);
-    else if (c.state === "pending") add([`… ${c.pending} of ${total} checks running`, "wait"], counts);
-    else add([`✓ ${total} checks passed`, "ok"], counts);
+    if (c.state === "fail") out.push(sig("✗", `${c.failed} of ${plural(total, "check")} failed`, "bad", counts));
+    else if (c.state === "pending") out.push(sig("…", `${c.pending} of ${plural(total, "check")} running`, "wait", counts));
+    else out.push(sig("✓", `${plural(total, "check")} passed`, "ok", counts));
   }
-  if (REVIEW[p.review]) add(REVIEW[p.review]);
-  if (MERGE[p.merge]) add(MERGE[p.merge]);
-  return out;
+  if (MERGE[p.merge]) out.push(sig(...MERGE[p.merge]));
+  if (REVIEW[p.review]) out.push(sig(...REVIEW[p.review]));
+  const rank = { bad: 0, wait: 1, ok: 2 };
+  return out.sort((a, b) => rank[a.dataset.k] - rank[b.dataset.k]);
+}
+
+// people is who said what, one entry per person: asked for changes, left threads open,
+// approved, commented, still asked to review; then who else is assigned.
+function people(p) {
+  const by = new Map();
+  const person = login => { if (!by.has(login)) by.set(login, { login, says: [], rank: 9, last: null }); return by.get(login); };
+  const say = (login, rank, glyph, words, k) => { const x = person(login); x.says.push([glyph, words, k]); x.rank = Math.min(x.rank, rank); };
+  for (const r of p.reviewers || []) {
+    if (r.state === "changes_requested") say(r.login, 0, "✗", "requested changes", "bad");
+    else if (r.state === "approved") say(r.login, 2, "✓", "approved", "ok");
+  }
+  for (const c of p.commenters || []) {
+    if (c.unresolved) say(c.login, 1, "●", `${c.unresolved} unresolved`, "bad");
+    if (c.comments) say(c.login, 3, "", plural(c.comments, "comment"), "");
+    person(c.login).last = c.lastAt;
+  }
+  for (const r of p.reviewers || []) if (r.state === "requested") say(r.login, 4, "…", "review requested", "wait");
+  for (const a of p.assignees || []) if (a !== p.author) say(a, 5, "", "assigned", ""); // authors mostly assign themselves
+
+  const list = [...by.values()].sort((a, b) => a.rank - b.rank);
+  if (!list.length) return null;
+  const row = el("div", "row people");
+  for (const x of list.slice(0, MAX_PEOPLE)) {
+    const w = el("span", "who");
+    w.append(el("b", null, x.login));
+    x.says.forEach(([glyph, words, k], i) => { if (i) w.append(","); w.append(sig(glyph, words, k)); });
+    w.title = `${x.login}: ${x.says.map(s => s[1]).join(", ")}` + (x.last ? ` · last comment ${ago(x.last)}` : "");
+    row.append(w);
+  }
+  const rest = list.slice(MAX_PEOPLE);
+  if (rest.length) { const m = el("span", "more", `+${rest.length} more`); m.title = rest.map(x => x.login).join(", "); row.append(m); }
+  return row;
 }
 
 function labels(p) {
-  const box = el("div", "labels");
+  const box = el("span", "labels");
   for (const l of p.labels.slice(0, MAX_LABELS)) {
     const s = el("span", "label", l.name);
     if (/^[0-9a-f]{6}$/i.test(l.color || "")) s.style.setProperty("--lc", "#" + l.color); // never raw CSS from data
@@ -227,69 +262,53 @@ function labels(p) {
   return box;
 }
 
-function people(p) {
-  const line = el("div", "people");
-  const names = (title, list, render) => {
-    if (!list.length) return;
-    if (line.childNodes.length) line.append(" · ");
-    line.append(title + " ");
-    list.slice(0, MAX_PEOPLE).forEach((x, i) => { if (i) line.append(", "); line.append(render(x)); });
-    const rest = list.slice(MAX_PEOPLE);
-    if (rest.length) { const m = el("span", null, ` +${rest.length}`); m.title = rest.map(x => x.login || x).join(", "); line.append(m); }
-  };
-  names("review", p.reviewers || [], r => {
-    const [glyph, said] = REVIEWER[r.state] || ["", r.state];
-    const b = el("b", null, r.login + " ");
-    const g = el("span", null, glyph);
-    g.setAttribute("aria-hidden", "true");
-    b.append(g, el("span", "sr", ` (${said})`)); // screen readers say the words, not "check mark"
-    b.title = `${r.login}: ${said}`;
-    return b;
-  });
-  // Authors mostly assign themselves; only someone else is news.
-  names("assigned", (p.assignees || []).filter(a => a !== p.author), a => el("b", null, a));
-  return line.childNodes.length ? line : null;
-}
-
 function card(p, depth, where) {
-  const a = el("a", "card" + (live(p) ? "" : " done"));
+  const open = live(p);
+  const a = el("a", "card" + (open ? "" : " done"));
   a.href = /^https:\/\//.test(p.url) ? p.url : "#"; // never a javascript: link from edited data
   a.target = "_blank";
   a.rel = "noopener";
-  if (depth) a.style.setProperty("--depth", String(Math.min(depth, 8)));
+  a.dataset.s = p.status;
+  if (depth) a.style.setProperty("--depth", String(depth));
   if (p.attention) a.dataset.a = p.attention;
 
-  const head = el("div", "head");
-  const pill = el("span", "pill", LABEL[p.status] || p.status);
-  pill.dataset.s = p.status;
-  head.append(el("span", "num", "#" + p.number), pill);
-  if (ATTENTION[p.attention]) { const [text, k] = ATTENTION[p.attention]; const t = el("span", "tag", text); t.dataset.k = k; head.append(t); }
-  if (where) head.append(el("span", "place", where));
+  const aside = el("span", "aside");
+  if (open) {
+    if (ATTENTION[p.attention]) { const [text, k] = ATTENTION[p.attention]; const t = el("span", "tag", text); t.dataset.k = k; aside.append(t); }
+    if (p.status === "draft") aside.append(el("span", "tag", "draft"));
+    const w = el("span", null, ago(p.createdAt));
+    w.title = "opened " + day(p.createdAt);
+    aside.append(w);
+  } else {
+    const at = p.status === "merged" ? p.mergedAt : p.closedAt;
+    aside.append(el("span", "tag", p.status));
+    if (at) { const w = el("span", null, day(at)); w.title = `opened ${day(p.createdAt)} · ${p.status} ${day(at)}`; aside.append(w); }
+  }
+  const head = el("div", "row");
+  head.append(el("span", "num", "#" + p.number), el("span", "title", p.title), aside);
+  a.append(head);
+  if (!open) return a;
 
-  const sub = el("div", "sub");
+  const sub = el("div", "row");
+  if (where) sub.append(el("span", "place", where));
   // Show the base only when it is not the default branch; unknown default (old cache, failed lookup) shows none.
   const onBase = p.base && snap.defaultBranch && p.base !== snap.defaultBranch ? ` → ${p.base}` : "";
   sub.append(el("span", "branch", p.branch + onBase));
-  let when = "opened " + ago(p.createdAt), full = "opened " + day(p.createdAt);
-  if (p.status === "merged" && p.mergedAt) { when = "merged " + day(p.mergedAt); full += " · " + when; }
-  else if (p.status === "closed" && p.closedAt) { when = "closed " + day(p.closedAt); full += " · " + when; }
-  const w = el("span", "when", when);
-  w.title = full;
-  sub.append(w);
+  a.append(sub);
 
-  const main = el("div", "main");
-  main.append(head, el("div", "title", p.title), sub);
-  if (p.labels && p.labels.length) main.append(labels(p));
-  if (live(p)) { const who = people(p); if (who) main.append(who); }
-  a.append(main);
-  const sig = live(p) ? signals(p) : [];
-  if (sig.length) { const box = el("div", "sig"); box.append(...sig); a.append(box); }
+  // Labels share the short standing line, not the branch line: branches of stacked PRs run long.
+  const row = el("div", "row state");
+  row.append(...standing(p));
+  if (p.labels && p.labels.length) row.append(labels(p));
+  if (row.childNodes.length) a.append(row);
+  const who = people(p);
+  if (who) a.append(who);
   return a;
 }
 
 function searchable(p) {
-  return [String(p.number), p.title, p.branch,
-    ...(p.labels || []).map(l => l.name), ...(p.reviewers || []).map(r => r.login), ...(p.assignees || [])].join("\n").toLowerCase();
+  return [String(p.number), p.title, p.branch, ...(p.labels || []).map(l => l.name), ...(p.reviewers || []).map(r => r.login),
+    ...(p.commenters || []).map(c => c.login), ...(p.assignees || [])].join("\n").toLowerCase();
 }
 
 function render() {
@@ -298,7 +317,7 @@ function render() {
   renderMeta(prs);
   renderChips(prs);
   const term = $("q").value.trim().toLowerCase().replace(/^#/, "");
-  const match = p => FILTERS[filter](p) && (!term || searchable(p).includes(term));
+  const match = p => MATCH[filter](p) && (!term || searchable(p).includes(term));
   const root = $("groups");
   root.replaceChildren();
   for (const g of snap.groups) {
@@ -307,21 +326,13 @@ function render() {
     const d = el("details");
     d.open = true;
     const sum = el("summary");
-    sum.append(el("h2", null, g.name));
-    if (g.stack) sum.append(el("span", "kind", "stack"));
-    const tally = el("span", "tally");
-    tally.append(`${g.prs.length} PR${g.prs.length === 1 ? "" : "s"}`);
-    for (const s of ["open", "draft", "merged", "closed"]) {
-      const n = g.prs.filter(p => p.status === s).length;
-      if (!n) continue;
-      const t = el("span");
-      t.dataset.s = s;
-      t.append(el("i", "dot"), `${n} ${LABEL[s].toLowerCase()}`);
-      tally.append(t);
-    }
+    const name = el("span", "gname");
+    name.append(el("h2", null, g.name));
+    const tally = [g.stack ? "stack" : "", plural(g.prs.length, "PR")];
     const needs = g.prs.filter(p => p.attention === "needs_you").length;
-    if (needs) { const t = el("span", "s", `✗ ${needs} need${needs === 1 ? "s" : ""} you`); t.dataset.k = "bad"; tally.append(t); }
-    sum.append(tally);
+    if (needs) tally.push(`${needs} need${needs === 1 ? "s" : ""} you`);
+    name.append(el("span", "tally", tally.filter(Boolean).join(" · ")));
+    sum.append(name);
     const list = el("div", "list");
     // In a stack, depth indents each PR under the one it sits on; a filtered-out parent leaves the indent as it is.
     shown.forEach(([p, i]) => list.append(card(p, g.stack ? g.stack.entries[i].depth : 0, g.stack ? place(g, i) : "")));

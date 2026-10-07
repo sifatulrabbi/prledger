@@ -19,23 +19,28 @@ var update = flag.Bool("update", false, "rewrite golden files")
 
 // fakeGh stands in for the gh process. Without respond it answers
 // `gh repo view` with "main", the open-PR details call with details (or []),
-// and every other run with stdout/err; respond, when set, answers every call.
-// It records the argv and env of the last call that is neither repo view nor
-// the details call (the pr list call tests inspect).
+// the GraphQL discussions call with discussions (or none), and every other
+// run with stdout/err; respond, when set, answers every call. It records the
+// argv and env of the last call that is none of those three (the pr list
+// call tests inspect). The details and discussions calls run concurrently.
 type fakeGh struct {
-	stdout  []byte
-	details []byte
-	err     error
-	argv    []string
-	env     []string
+	stdout      []byte
+	details     []byte
+	discussions []byte
+	err         error
+	argv        []string
+	env         []string
 	// respond, when set, answers instead of stdout/err, e.g. per subcommand.
 	respond func(argv []string) ([]byte, error)
 }
 
+func isDiscussions(argv []string) bool { return slices.Contains(argv, "graphql") }
+
 func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
 	repoView := slices.Contains(argv, "repo") && slices.Contains(argv, "view")
 	details := hasPair(argv, "--state", "open")
-	if !repoView && !details {
+	talk := isDiscussions(argv)
+	if !repoView && !details && !talk {
 		f.argv, f.env = argv, env // the pr list call the tests inspect
 	}
 	switch {
@@ -49,6 +54,10 @@ func (f *fakeGh) Run(_ context.Context, argv, env []string) ([]byte, error) {
 		return f.details, nil
 	case details:
 		return []byte("[]"), nil
+	case talk && f.discussions != nil:
+		return f.discussions, nil
+	case talk:
+		return []byte(`{"data":{"search":{"nodes":[]}}}`), nil
 	}
 	return f.stdout, nil
 }
@@ -79,7 +88,11 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &harness{gh: &fakeGh{stdout: fixture, details: details}}
+	discussions, err := os.ReadFile(filepath.Join("testdata", "gh-pr-discussions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &harness{gh: &fakeGh{stdout: fixture, details: details, discussions: discussions}}
 	h.env = map[string]string{
 		"HOME":            "/home/alice",
 		"PRLEDGER_CONFIG": filepath.Join(t.TempDir(), "config.yaml"), // never the real one
@@ -172,6 +185,8 @@ func TestListWarnsWhenDetailsFail(t *testing.T) {
 		switch {
 		case hasPair(argv, "--state", "open"):
 			return nil, errors.New("HTTP 504: Gateway Timeout")
+		case isDiscussions(argv):
+			return nil, errors.New("GraphQL: Something went wrong")
 		case slices.Contains(argv, "view"):
 			return []byte("main\n"), nil
 		}
@@ -180,8 +195,10 @@ func TestListWarnsWhenDetailsFail(t *testing.T) {
 	if err := h.run("list"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(h.stdout.String(), "#12") || !strings.Contains(h.stderr.String(), "warning: Reviews, CI and merge state are not shown") || !strings.Contains(h.stderr.String(), "504") {
-		t.Fatalf("stdout:\n%s\nstderr:\n%s\nwant the PRs and a warning naming the failure", h.stdout.String(), h.stderr.String())
+	for _, want := range []string{"warning: Reviews, CI and merge state are not shown", "504", "warning: Review comments are not shown", "Something went wrong"} {
+		if !strings.Contains(h.stdout.String(), "#12") || !strings.Contains(h.stderr.String(), want) {
+			t.Fatalf("stdout:\n%s\nstderr:\n%s\nwant the PRs and %q", h.stdout.String(), h.stderr.String(), want)
+		}
 	}
 }
 
@@ -190,5 +207,23 @@ func TestListReportsGhFailure(t *testing.T) {
 	h.gh.err = errors.New("gh: not logged in")
 	if err := h.run("list"); err == nil || !strings.Contains(err.Error(), "not logged in") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSignalsNameWhoAskedForChangesAndWhoseThreadsAreOpen(t *testing.T) {
+	pr := core.PR{
+		Review: core.ReviewChanges,
+		Reviewers: []core.Reviewer{
+			{Login: "bob", State: core.ReviewerApproved},
+			{Login: "dan", State: core.ReviewerChanges},
+		},
+		Commenters: []core.Commenter{
+			{Login: "carol", Comments: 3, Unresolved: 2},
+			{Login: "a", Comments: 1}, {Login: "b", Comments: 1}, {Login: "c", Comments: 1}, {Login: "d", Comments: 1},
+		},
+	}
+	want := "changes requested by dan · 2 unresolved (carol) · comments: a, b, c +1"
+	if got := signals(pr); got != want {
+		t.Fatalf("signals = %q\nwant      %q", got, want)
 	}
 }

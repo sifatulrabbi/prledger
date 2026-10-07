@@ -247,3 +247,89 @@ func TestListPRsRejectsEmptyCommand(t *testing.T) {
 		t.Fatal("want an error for an empty gh command")
 	}
 }
+
+func TestDiscussionsSearchesOpenPRsWithGraphQL(t *testing.T) {
+	r := &fakeRunner{stdout: `{"data":{"search":{"nodes":[]}}}`}
+	if _, err := (Client{Runner: r, Command: []string{"gh"}}).Discussions(context.Background(), query); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"gh", "api", "graphql",
+		"-f", "query=" + discussionsQuery,
+		"-f", "q=repo:octo/hello-world is:pr is:open author:@me sort:created-desc",
+		"-F", "n=100", // search answers 100 at most
+	}
+	if !reflect.DeepEqual(r.argv, want) {
+		t.Fatalf("argv =\n%q\nwant\n%q", r.argv, want)
+	}
+}
+
+// Regression (review): `first:` read a long PR's oldest reviews, comments
+// and threads, so new unresolved threads went unseen.
+func TestDiscussionsReadTheNewestItems(t *testing.T) {
+	for _, want := range []string{"reviews(last: 100)", "comments(last: 100)", "reviewThreads(last: 50)", "comments(first: 20)"} {
+		if !strings.Contains(discussionsQuery, want) {
+			t.Errorf("discussionsQuery lacks %q", want)
+		}
+	}
+}
+
+// The shape below is what GitHub's GraphQL API answers for discussionsQuery.
+func TestDiscussionsMapsPeopleAndDropsBots(t *testing.T) {
+	r := &fakeRunner{stdout: `{"data":{"search":{"nodes":[{
+	  "number": 7,
+	  "reviews": {"nodes": [
+	    {"author": {"login": "bob", "__typename": "User"}, "body": "Looks off, see inline.", "submittedAt": "2026-03-01T10:00:00Z"},
+	    {"author": {"login": "bob", "__typename": "User"}, "body": "  ", "submittedAt": "2026-03-01T11:00:00Z"},
+	    {"author": {"login": "github-actions", "__typename": "Bot"}, "body": "Coverage 81%", "submittedAt": "2026-03-01T12:00:00Z"}
+	  ]},
+	  "comments": {"nodes": [
+	    {"author": {"login": "carol", "__typename": "User"}, "createdAt": "2026-03-02T10:00:00Z", "isMinimized": false},
+	    {"author": {"login": "carol", "__typename": "User"}, "createdAt": "2026-03-02T11:00:00Z", "isMinimized": true},
+	    {"author": {"login": "linear", "__typename": "Bot"}, "createdAt": "2026-03-02T12:00:00Z", "isMinimized": false},
+	    {"author": null, "createdAt": "2026-03-02T13:00:00Z", "isMinimized": false}
+	  ]},
+	  "reviewThreads": {"nodes": [
+	    {"isResolved": false, "comments": {"nodes": [
+	      {"author": {"login": "bob", "__typename": "User"}, "createdAt": "2026-03-01T10:00:00Z"},
+	      {"author": {"login": "me", "__typename": "User"}, "createdAt": "2026-03-03T10:00:00Z"}
+	    ]}},
+	    {"isResolved": false, "comments": {"nodes": [
+	      {"author": {"login": "coderabbit", "__typename": "Bot"}, "createdAt": "2026-03-01T09:00:00Z"},
+	      {"author": {"login": "dan", "__typename": "User"}, "createdAt": "2026-03-04T10:00:00Z"}
+	    ]}}
+	  ]}
+	}, {}]}}}`}
+	got, err := Client{Runner: r, Command: []string{"gh"}}.Discussions(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := func(s string) time.Time { v, _ := time.Parse(time.RFC3339, s); return v }
+	// An empty review text (inline comments only) is no note of its own; a
+	// hidden comment is no note; deleted users and bots are nobody. A thread
+	// a bot opened stays the bot's even after a person replies.
+	want := []core.Discussion{{
+		Number: 7,
+		Notes: []core.Note{
+			{Login: "bob", At: ts("2026-03-01T10:00:00Z")},
+			{Login: "carol", At: ts("2026-03-02T10:00:00Z")},
+			{Login: "bob", At: ts("2026-03-01T10:00:00Z")},
+			{Login: "me", At: ts("2026-03-03T10:00:00Z")},
+			{Login: "dan", At: ts("2026-03-04T10:00:00Z")},
+		},
+		Threads: []core.Thread{
+			{Opener: "bob"},
+			{Opener: ""},
+		},
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("discussions =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+func TestDiscussionsWrapsGhFailure(t *testing.T) {
+	r := &fakeRunner{err: errors.New("GraphQL: Something went wrong")}
+	_, err := Client{Runner: r, Command: []string{"gh"}}.Discussions(context.Background(), query)
+	if err == nil || !strings.Contains(err.Error(), "Something went wrong") {
+		t.Fatalf("err = %v, want gh's message kept", err)
+	}
+}

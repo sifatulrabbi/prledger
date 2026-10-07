@@ -47,7 +47,19 @@
             "pending": 0
           },
           "merge": "clean",
-          "attention": "approved"
+          "attention": "approved",
+          "commenters": [
+            {
+              "login": "erin",
+              "comments": 1,
+              "lastAt": "2026-09-22T08:00:00Z"
+            },
+            {
+              "login": "bob",
+              "comments": 2,
+              "lastAt": "2026-09-21T10:00:00Z"
+            }
+          ]
         },
         {
           "number": 11,
@@ -64,7 +76,16 @@
             "passed": 0,
             "failed": 0,
             "pending": 1
-          }
+          },
+          "attention": "needs_you",
+          "commenters": [
+            {
+              "login": "dave",
+              "comments": 1,
+              "unresolved": 1,
+              "lastAt": "2026-09-23T10:00:00Z"
+            }
+          ]
         },
         {
           "number": 10,

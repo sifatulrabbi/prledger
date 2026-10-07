@@ -47,6 +47,9 @@ type PR struct {
 	Checks    *Checks    `json:"checks,omitempty"`
 	Merge     Merge      `json:"merge,omitempty"`
 	Attention Attention  `json:"attention,omitempty"`
+	// Commenters are people other than the author who commented, newest
+	// first (see Discussion).
+	Commenters []Commenter `json:"commenters,omitempty"`
 }
 
 // Query selects the pull requests to list.
@@ -64,4 +67,6 @@ type PRSource interface {
 	DefaultBranch(ctx context.Context, repo Repo) (string, error)
 	// OpenDetails gives reviews, CI and merge state for q's open PRs.
 	OpenDetails(ctx context.Context, q Query) ([]Details, error)
+	// Discussions gives who commented on q's open PRs, bots left out.
+	Discussions(ctx context.Context, q Query) ([]Discussion, error)
 }

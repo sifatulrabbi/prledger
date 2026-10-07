@@ -23,6 +23,25 @@ type fakeSource struct {
 	detailsFailures int
 	// detailsFn, when set, answers OpenDetails instead.
 	detailsFn func(ctx context.Context) ([]core.Details, error)
+	// Discussions runs next to OpenDetails, so it keeps its own fields.
+	discussions      []core.Discussion
+	discussionsErr   error
+	discussionsCalls int
+	// discussionsFailures, when set, limits discussionsErr to the first calls.
+	discussionsFailures int
+	// discussionsFn, when set, answers Discussions instead.
+	discussionsFn func(ctx context.Context) ([]core.Discussion, error)
+}
+
+func (f *fakeSource) Discussions(ctx context.Context, _ core.Query) ([]core.Discussion, error) {
+	f.discussionsCalls++
+	if f.discussionsFn != nil {
+		return f.discussionsFn(ctx)
+	}
+	if f.discussionsErr != nil && (f.discussionsFailures == 0 || f.discussionsCalls <= f.discussionsFailures) {
+		return nil, f.discussionsErr
+	}
+	return f.discussions, nil
 }
 
 // OpenDetails fails with detailsErr; with detailsFailures set, only that many

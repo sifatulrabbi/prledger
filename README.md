@@ -29,8 +29,8 @@ prledger finds the repo from the `origin` remote of the current folder. To look 
 
 | Command | What it does |
 | --- | --- |
-| `prledger serve` | Opens a page in your browser with your pull requests one per line, grouped, showing labels, reviewers, CI checks, merge conflicts and whether each open PR needs you. Has filters and search. Click a PR to open it on GitHub. `--port n` picks the port, `--no-open` skips opening the browser. Press Ctrl-C to stop. |
-| `prledger list` | Prints your pull requests grouped by feature, with a short CI, review and merge note for open ones (`ci ✗ · changes requested · conflicts`). `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
+| `prledger serve` | Opens a page in your browser with your pull requests one per line, grouped, showing labels, CI checks, merge conflicts, who approved, asked for changes or commented, and whether each open PR needs you. Has filters and search. Click a PR to open it on GitHub. `--port n` picks the port, `--no-open` skips opening the browser. Press Ctrl-C to stop. |
+| `prledger list` | Prints your pull requests grouped by feature, with a short note for open ones on CI, review, merge state and who commented (`ci ✗ · changes requested by bob · conflicts · 2 unresolved (carol) · comments: dan`). `--json` prints the snapshot as JSON. `--cached` shows the last fetched data without calling `gh`. |
 | `prledger export html` | Writes the same page as one standalone file you can open or share, with the data baked in. Default file: `prledger-<owner>-<repo>.html` in the current folder; `-o file` picks another. `--cached` uses the last fetched data. |
 | `prledger groups suggest` | Prints groups built from the automatic rules for every PR your config does not already group, plus a commented list of PRs it could not link. With no groups configured yet it prints a `groups:` block to paste under the repo; otherwise it prints list items to append under your existing `groups:`. Rename them as you like. `--cached` uses the last fetched data. |
 | `prledger doctor` | Checks, one line each, that the repo is detected, the config loads, `gh` runs, is logged in, and which GitHub user it acts as. Each failure prints how to fix it. Exits non-zero if any check fails. |
@@ -104,19 +104,22 @@ To log that account in once: `GH_CONFIG_DIR=~/.config/gh-personal gh auth login`
 
 `prledger serve` listens on `127.0.0.1` only and answers only requests addressed to localhost. The page shows the last fetched data right away, then asks `gh` for the current status; use the **Refresh** button to ask again later. If a refresh fails (for example `gh` is logged out), the page keeps the data it has and shows the error.
 
-Each pull request is one line. Open and draft ones show:
+Each open or draft pull request is a card of up to four lines:
 
-- **Where it stands**, on the right: CI checks (`✓ 20 checks passed`, `✗ 1 of 21 checks failed`, `… 3 of 9 checks running`), the review (`✓ approved`, `✗ changes requested`, `… review needed`) and merge trouble (`⊘ conflicts`, `↓ behind base`).
-- **What it needs**, as a colored left edge and a word next to the number. **needs you** means conflicts, failing CI or requested changes. **approved** means approved with none of those. **waiting** means an open PR waiting on reviewers or CI. Drafts only ever get **needs you**.
-- **Labels** in their GitHub colors, **reviewers** with a mark for where each stands (✓ approved, ✗ changes requested, … not reviewed yet), and **assignees** other than the author.
+1. Number and title, then **what it needs** (also the card's colored left edge) and its age. **needs you** means conflicts, failing CI, requested changes or review threads someone else opened that are not resolved. **approved** means approved with none of those. **waiting** means an open PR waiting on reviewers or CI. Drafts only ever get **needs you**.
+2. Its place in a stack (`2/5 · on #480`) and its branch.
+3. **Where it stands**, trouble first: CI checks (`✓ 20 checks passed`, `✗ 1 of 21 checks failed`, `… 3 of 9 checks running`), merge trouble (`⊘ conflicts`, `↓ behind base`) and the review (`✓ approved`, `✗ changes requested`, `… review needed`), with the labels in their GitHub colors.
+4. **Who said what**, one entry per person, most urgent first: `bob ✗ requested changes`, `carol ● 2 unresolved, 4 comments`, `dan ✓ approved`, `erin 1 comment`, `frank … review requested`, then assignees other than the author. Hover a name for when they last commented.
 
-Merged and closed pull requests stay short: number, title, branch, labels and dates.
+Merged and closed pull requests are one quiet line: number, title, state and date.
 
-The page opens on **Active** (open and draft). The chips switch to one state, or to **Needs you**, **Approved** (every approved open PR, even one that also needs you) or **Waiting**. Search matches number, title, branch, label names and people.
+The page opens on **Active** (open and draft). The chips switch to **Needs you**, **Approved** (every approved open PR, even one that also needs you), **Waiting**, **Done** (merged and closed) or **All**. Search matches number, title, branch, label names and people.
 
-GitHub only reports merge conflicts once it has checked the PR, so a PR it has not checked shows no merge note. Comment-only reviews are left out because they neither approve nor block. GitHub keeps a PR at "changes requested" until the reviewer approves, but once you have asked every such reviewer to look again, prledger shows it as **waiting** on them.
+GitHub only reports merge conflicts once it has checked the PR, so a PR it has not checked shows no merge note. GitHub keeps a PR at "changes requested" until the reviewer approves, but once you have asked every such reviewer to look again, prledger shows it as **waiting** on them.
 
-Reviews, CI and merge state come from a second, slower `gh` call that only asks about open PRs. Asking about every PR at once makes GitHub time out on busy repos. If that call fails twice (or takes over 40 seconds each time), the page and `list` still show every PR and say what is missing. `groups suggest` skips that call.
+Comments count review texts, comments on the code and the conversation, from people other than you; bots (CI reports, linters, issue trackers) are left out. Only unresolved review threads make a PR **needs you**: plain comments have no resolved state, so prledger cannot tell whether you still owe an answer. A thread belongs to whoever opened it; threads you or a bot opened never count, even after someone replies. Only the newest 100 reviews, 100 comments and 50 threads of a PR are read.
+
+Reviews, CI and merge state come from a second, slower `gh` call that only asks about open PRs. Asking about every PR at once makes GitHub time out on busy repos. Comments come from a third call, a `gh api graphql` search over your open PRs (at most 100), which runs at the same time; `gh pr list` cannot tell bots from people or see review threads. If either call fails twice (or takes over 40 seconds each time), the page and `list` still show every PR and say what is missing; without the comments call, a PR with open threads can show **approved** or **waiting**. GitHub's search index runs a little behind, so a PR opened moments ago may show no comments yet. `groups suggest` skips both calls.
 
 Fetched data is cached in `~/.cache/prledger` (or `$XDG_CACHE_HOME/prledger`), one file per repo, author and `gh` setup, so two accounts never see each other's data. Deleting it is safe.
 
